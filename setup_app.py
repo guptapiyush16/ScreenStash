@@ -5,7 +5,7 @@ Handles:
 2. Default screenshot directory auto-detection (including OneDrive support)
 3. Database initialization at OS application-data directory
 4. Creating Desktop and Start Menu shortcuts
-5. Registering ScreenStash in Windows Startup (auto-runs on boot)
+5. Registering ScreenStash in Windows Startup only after explicit consent
 6. Launching the silent background service
 """
 
@@ -55,7 +55,7 @@ def create_windows_shortcut(target_path: str, arguments: str, shortcut_path: Pat
         return False
 
 
-def run_setup(auto_start: bool = True):
+def run_setup(auto_start: bool = True, start_at_login: bool = False):
     print("=" * 65)
     print("[*] ScreenStash Desktop Setup & Deployment")
     print("=" * 65)
@@ -73,7 +73,7 @@ def run_setup(auto_start: bool = True):
     print(f"[✓] Database Path     : {config.DATABASE_PATH}")
     print(f"[✓] Screenshot Folder : {screenshot_dir}")
 
-    # 3. Create Windows Shortcuts (Desktop & Startup)
+    # 3. Create a desktop shortcut. Login startup is opt-in.
     if sys.platform == "win32":
         project_dir = Path(__file__).parent.resolve()
         desktop_dir = Path.home() / "Desktop"
@@ -103,15 +103,15 @@ def run_setup(auto_start: bool = True):
         )
         print(f"[✓] Created Desktop shortcut: {desktop_shortcut.name}")
 
-        # 3b. Windows Startup Shortcut (Runs silently on boot)
-        startup_shortcut = startup_dir / "ScreenStash Background Service.lnk"
-        create_windows_shortcut(
-            target_path=pythonw_exe,
-            arguments=f'"{background_script}"',
-            shortcut_path=startup_shortcut,
-            description="ScreenStash Background Screenshot Monitor"
-        )
-        print(f"[✓] Registered in Windows Startup (auto-runs on boot)")
+        if start_at_login:
+            startup_shortcut = startup_dir / "ScreenStash Background Service.lnk"
+            create_windows_shortcut(
+                target_path=pythonw_exe,
+                arguments=f'"{background_script}"',
+                shortcut_path=startup_shortcut,
+                description="ScreenStash Background Screenshot Monitor"
+            )
+            print("[✓] Registered in Windows Startup (user consented)")
 
     # 4. Stop any existing daemon instance
     if is_daemon_running():

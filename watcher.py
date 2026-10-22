@@ -75,8 +75,13 @@ class ScreenshotEventHandler(FileSystemEventHandler):
 
     def _process_async(self, file_path_str: str):
         try:
-            self.callback(file_path_str)
+            result = self.callback(file_path_str)
+            if result is None:
+                with self._lock:
+                    self._recently_handled.pop(file_path_str, None)
         except Exception as e:
+            with self._lock:
+                self._recently_handled.pop(file_path_str, None)
             logger.error(f"Error processing {file_path_str}: {e}", exc_info=True)
 
 
@@ -89,7 +94,7 @@ class ScreenshotWatcher:
         self.observer: Optional[Observer] = None
         self.is_active = False
 
-    def start(self):
+    def start(self, callback: Optional[Callable[[str], None]] = None):
         """Starts watching the screenshot directory."""
         if self.is_active:
             return
@@ -101,7 +106,7 @@ class ScreenshotWatcher:
                 logger.error(f"Could not create screenshot directory {self.directory}: {e}")
                 return
 
-        event_handler = ScreenshotEventHandler()
+        event_handler = ScreenshotEventHandler(callback=callback)
         self.observer = Observer()
         self.observer.schedule(event_handler, str(self.directory), recursive=False)
         self.observer.start()

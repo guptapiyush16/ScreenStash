@@ -92,12 +92,16 @@ LOG_FILE_PATH = APP_DATA_DIR / "screenstash.log"
 DEFAULT_CONFIG: Dict[str, Any] = {
     "screenshot_dir": str(detect_default_screenshot_dir()),
     "ollama_url": "http://localhost:11434",
-    "ollama_model": "llama3:latest",
+    "ollama_model": "gemma3:4b",
     "tesseract_cmd": r"C:\Program Files\Tesseract-OCR\tesseract.exe" if sys.platform == "win32" else "tesseract",
     "auto_process_new_screenshots": True,
     "file_settle_wait_seconds": 1.5,
     "enable_fallback_heuristic_ai": True,
-    "theme": "dark"
+    "theme": "light",
+    "onboarding_complete": False,
+    "process_locally": True,
+    "start_at_login": False,
+    "notify_on_results": True,
 }
 
 
@@ -122,6 +126,7 @@ def load_config() -> Dict[str, Any]:
 def save_config(config_data: Dict[str, Any]) -> None:
     """Save configuration to config.json."""
     try:
+        CONFIG_FILE_PATH.parent.mkdir(parents=True, exist_ok=True)
         with open(CONFIG_FILE_PATH, "w", encoding="utf-8") as f:
             json.dump(config_data, f, indent=4)
     except Exception as e:

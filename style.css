@@ -385,6 +385,81 @@ a {
   color: #71717a;
 }
 
+/* ==========================================================================
+   Installation and AI setup
+   ========================================================================== */
+.setup-section {
+  padding: 110px 7vw;
+  background: #f4f3ef;
+}
+
+.setup-grid {
+  max-width: 1180px;
+  margin: 42px auto 0;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+}
+
+.setup-card {
+  background: #ffffff;
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-md);
+  padding: 26px;
+  box-shadow: var(--shadow-sm);
+}
+
+.setup-number {
+  color: #65a30d;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  margin-bottom: 18px;
+}
+
+.setup-card h3 {
+  font-family: var(--font-display);
+  font-size: 21px;
+  margin-bottom: 12px;
+}
+
+.setup-card p {
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.65;
+  margin-bottom: 12px;
+}
+
+.setup-card code,
+.setup-note {
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.setup-code {
+  background: #18181b;
+  color: #d9f99d;
+  border-radius: 8px;
+  padding: 12px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.7;
+  overflow-x: auto;
+  margin: 14px 0;
+}
+
+.setup-result {
+  max-width: 1180px;
+  margin: 24px auto 0;
+  padding: 18px 20px;
+  border: 1px solid #d9ecc1;
+  border-radius: var(--radius-md);
+  background: #f0f3ea;
+  color: #3f6212;
+  font-size: 13px;
+  line-height: 1.65;
+}
+
 .hint-icons {
   display: inline-flex;
   gap: 4px;
@@ -1351,6 +1426,9 @@ a {
     grid-template-columns: 1fr;
   }
   .steps-grid {
+    grid-template-columns: 1fr;
+  }
+  .setup-grid {
     grid-template-columns: 1fr;
   }
   .benefits-grid {

@@ -96,7 +96,7 @@ def call_ollama_ai(ocr_text: str, file_name: str, config: Dict[str, Any]) -> Opt
     Sends OCR text to Ollama /api/generate with strict JSON schema instructions.
     """
     ollama_url = config.get("ollama_url", "http://localhost:11434").rstrip("/")
-    ollama_model = config.get("ollama_model", "llama3:latest")
+    ollama_model = config.get("ollama_model", "gemma3:4b")
 
     system_prompt = (
         "You are an AI assistant that analyzes screenshots and OCR text. "
@@ -291,9 +291,11 @@ def process_screenshot(file_path_str: str) -> Optional[ScreenshotRecord]:
 
 
 def _execute_processing(file_path: Path) -> Optional[ScreenshotRecord]:
+    record_id: Optional[int] = None
     # Step 1: Wait for file write stabilization
     if not wait_for_file_settled(file_path):
-        logger.warning(f"File {file_path.name} was not settled in time.")
+        logger.warning(f"File {file_path.name} was not settled in time; it will be retried.")
+        return None
 
     file_size = file_path.stat().st_size
     file_name = file_path.name
@@ -319,43 +321,42 @@ def _execute_processing(file_path: Path) -> Optional[ScreenshotRecord]:
         logger.error(f"Failed to record screenshot in database: {file_name}")
         return None
 
-    db.update_status(record_id, ProcessStatus.PROCESSING)
-    config = load_config()
+    try:
+        db.update_status(record_id, ProcessStatus.PROCESSING)
+        app_config = load_config()
 
-    # Step 3: Immediate user feedback toast
-    show_saved_toast(
-        title="ScreenStash Saved",
-        message="AI is organizing your screenshot...",
-        category="Info",
-        duration_ms=3000
-    )
+        show_saved_toast(
+            title="ScreenStash is working",
+            message="Processing locally. Your screenshot stays on this device.",
+            category="Info",
+            duration_ms=3000
+        )
 
-    # Step 4: OCR
-    raw_ocr, ocr_ok = run_ocr(file_path, config.get("tesseract_cmd"))
+        raw_ocr, ocr_ok = run_ocr(file_path, app_config.get("tesseract_cmd"))
+        extraction: Optional[ExtractionResult] = None
+        if raw_ocr.strip() and app_config.get("process_locally", True):
+            extraction = call_ollama_ai(raw_ocr, file_name, app_config)
+        if not extraction:
+            extraction = fallback_heuristic_ai(raw_ocr, file_name)
+        if not ocr_ok:
+            extraction.confidence_score = min(extraction.confidence_score, 0.4)
 
-    # Step 5: AI Extraction (Ollama first, then fallback heuristic)
-    extraction: Optional[ExtractionResult] = None
-    if raw_ocr.strip():
-        extraction = call_ollama_ai(raw_ocr, file_name, config)
+        db.update_extraction_result(record_id, extraction)
+        logger.info(f"Successfully processed screenshot #{record_id} ({file_name}) -> {extraction.category.value}")
 
-    if not extraction:
-        extraction = fallback_heuristic_ai(raw_ocr, file_name)
-
-    # Step 6: Save extraction result to DB
-    db.update_extraction_result(record_id, extraction)
-    logger.info(f"Successfully processed screenshot #{record_id} ({file_name}) -> {extraction.category.value}")
-
-    # Step 7: Completion toast with category badge
-    cat_val = extraction.category.value
-    short_title = extraction.title
-    if len(short_title) > 42:
-        short_title = short_title[:39] + "..."
-
-    show_saved_toast(
-        title=f"✓ Organized as {cat_val}",
-        message=short_title or file_name,
-        category=cat_val,
-        duration_ms=4000
-    )
-
-    return db.get_screenshot_by_id(record_id)
+        if app_config.get("notify_on_results", True):
+            short_title = extraction.title
+            if len(short_title) > 42:
+                short_title = short_title[:39] + "..."
+            show_saved_toast(
+                title=f"{extraction.category.value} found in your screenshot",
+                message=short_title or file_name,
+                category=extraction.category.value,
+                duration_ms=4000
+            )
+        return db.get_screenshot_by_id(record_id)
+    except Exception as exc:
+        if record_id is not None:
+            db.update_status(record_id, ProcessStatus.FAILED, str(exc))
+        logger.error("Screenshot processing failed for %s: %s", file_path, exc, exc_info=True)
+        return None

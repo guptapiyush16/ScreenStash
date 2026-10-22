@@ -25,6 +25,8 @@ from processor import process_screenshot
 from watcher import ScreenshotWatcher, scan_existing_screenshots
 from background_service import is_daemon_running, stop_running_daemon
 import subprocess
+import html
+from ai_engine import MODEL_CHOICES, model_is_available
 
 # 1. Page Configuration
 st.set_page_config(
@@ -698,6 +700,97 @@ st.markdown("""
 db.init_db()
 app_cfg = config.load_config()
 
+
+def start_background_service() -> None:
+    """Start the watcher without opening another dashboard window."""
+    if is_daemon_running():
+        return
+    target = Path(__file__).parent / ("background.pyw" if sys.platform == "win32" else "background_service.py")
+    executable = Path(sys.executable).parent / "pythonw.exe" if sys.platform == "win32" else Path(sys.executable)
+    if sys.platform == "win32" and not executable.exists():
+        executable = Path(sys.executable)
+    flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP if sys.platform == "win32" else 0
+    subprocess.Popen([str(executable), str(target)], cwd=str(Path(__file__).parent), creationflags=flags, close_fds=True)
+
+
+def show_onboarding() -> None:
+    """First-run setup: only collect the folder and explicit background consent."""
+    st.markdown(
+        "<div style='max-width:760px;margin:5vh auto 0;'>"
+        "<div class='greeting-kicker'><span class='greeting-dot'></span>WELCOME TO SCREENSTASH</div>"
+        "<h1 style='font-size:42px;margin:12px 0 8px;'>Your screenshots can remember for you.</h1>"
+        "<p style='font-size:16px;color:#71717a;line-height:1.7;'>"
+        "ScreenStash watches the folder where your screenshots already go, waits until each image is fully written, "
+        "and turns it into a task, event, receipt, reference, or other useful note. "
+        "<strong>Screenshots may contain private information.</strong> Processing stays on this device.</p>"
+        "</div>",
+        unsafe_allow_html=True,
+    )
+    with st.form("first_run_onboarding"):
+        detected = str(config.detect_default_screenshot_dir())
+        screenshot_dir = st.text_input("Where are your screenshots saved?", value=app_cfg.get("screenshot_dir", detected))
+        st.info(
+            "AI processing is local. Choose a model below. ScreenStash uses Ollama when it is available; "
+            "otherwise its offline OCR/heuristic fallback still works. You can run "
+            "`python screenstash.py setup-ai` later to download the model."
+        )
+        model_label = st.selectbox(
+            "Local AI model",
+            options=list(MODEL_CHOICES),
+            index=0,
+            help="This only chooses the model family. ScreenStash manages the model request for you.",
+        )
+        start_at_login = False
+        if sys.platform == "win32":
+            start_at_login = st.checkbox(
+                "Start ScreenStash when I log in",
+                value=False,
+                help="Optional. ScreenStash will not add itself to startup unless you explicitly enable this.",
+            )
+        else:
+            st.caption("Login startup is optional and can be enabled later from your operating system's login-items settings.")
+        consent = st.checkbox(
+            "I understand screenshots may contain private information and will be processed locally.",
+            value=False,
+        )
+        submitted = st.form_submit_button("Finish setup and start watching", type="primary")
+        if submitted:
+            if not consent:
+                st.error("Please confirm the local/private-data notice before continuing.")
+            elif not screenshot_dir.strip():
+                st.error("Choose a screenshot folder before continuing.")
+            else:
+                selected_dir = Path(screenshot_dir).expanduser()
+                selected_dir.mkdir(parents=True, exist_ok=True)
+                updated = dict(app_cfg)
+                updated.update({
+                    "screenshot_dir": str(selected_dir),
+                    "process_locally": True,
+                    "ollama_model": MODEL_CHOICES[model_label],
+                    "start_at_login": start_at_login,
+                    "onboarding_complete": True,
+                })
+                config.save_config(updated)
+                if start_at_login and sys.platform == "win32":
+                    from setup_app import get_windows_startup_dir, create_windows_shortcut
+                    startup = get_windows_startup_dir() / "ScreenStash Background Service.lnk"
+                    pythonw = Path(sys.executable).parent / "pythonw.exe"
+                    create_windows_shortcut(
+                        str(pythonw if pythonw.exists() else sys.executable),
+                        f'"{Path(__file__).parent / "background.pyw"}"',
+                        startup,
+                        "ScreenStash Background Screenshot Monitor",
+                    )
+                start_background_service()
+                st.success("ScreenStash is ready and watching in the background.")
+                time.sleep(0.5)
+                st.rerun()
+
+
+if not app_cfg.get("onboarding_complete", False):
+    show_onboarding()
+    st.stop()
+
 # Personalize greeting
 raw_user = getpass.getuser()
 user_name = raw_user.split('.')[0].capitalize() if raw_user else "Sam"
@@ -738,10 +831,10 @@ def show_settings_modal():
                 <div class="dark-icon-box dark-icon-green">⚙️</div>
                 <div>
                     <div style="font-size: 14px; font-weight: 700; color: #f4f4f5;">On-device AI</div>
-                    <div style="font-size: 12px; color: #a1a1aa;">Model ready • Processing locally</div>
+                    <div style="font-size: 12px; color: #a1a1aa;">{app_cfg.get("ollama_model", "gemma3:4b")} • Processing locally</div>
                 </div>
             </div>
-            <span class="badge-pill-ready">Ready</span>
+            <span class="badge-pill-ready">{"Ready" if model_is_available(app_cfg.get("ollama_model", "gemma3:4b"), app_cfg.get("ollama_url", "http://localhost:11434")) else "Download needed"}</span>
         </div>
 
         <!-- Row 3: Background monitoring -->
@@ -770,7 +863,12 @@ def show_settings_modal():
     with col_w1:
         st.markdown("<div class='pref-label'>Watched screenshot folder</div>", unsafe_allow_html=True)
     with col_w2:
-        st.markdown(f"<div style='text-align:right;' class='pref-val'>{short_dir}</div>", unsafe_allow_html=True)
+        screenshot_dir = st.text_input(
+            "Watched screenshot folder",
+            value=screenshot_dir,
+            label_visibility="collapsed",
+            key="settings_screenshot_dir",
+        )
     st.markdown("<hr style='border:0; border-top:1px solid #ebe9e1; margin: 10px 0;'>", unsafe_allow_html=True)
 
     # Process on this device
@@ -778,7 +876,12 @@ def show_settings_modal():
     with col_p1:
         st.markdown("<div class='pref-label'>Process on this device</div>", unsafe_allow_html=True)
     with col_p2:
-        proc_device = st.checkbox("Process on this device", value=True, label_visibility="collapsed", key="chk_proc_dev")
+        proc_device = st.checkbox(
+            "Process on this device",
+            value=app_cfg.get("process_locally", True),
+            label_visibility="collapsed",
+            key="chk_proc_dev",
+        )
     st.markdown("<hr style='border:0; border-top:1px solid #ebe9e1; margin: 10px 0;'>", unsafe_allow_html=True)
 
     # Notify for deadlines
@@ -786,7 +889,12 @@ def show_settings_modal():
     with col_n1:
         st.markdown("<div class='pref-label'>Notify for deadlines</div>", unsafe_allow_html=True)
     with col_n2:
-        notify_deadlines = st.checkbox("Notify for deadlines", value=True, label_visibility="collapsed", key="chk_notify")
+        notify_deadlines = st.checkbox(
+            "Notify for results",
+            value=app_cfg.get("notify_on_results", True),
+            label_visibility="collapsed",
+            key="chk_notify",
+        )
     st.markdown("<hr style='border:0; border-top:1px solid #ebe9e1; margin: 10px 0;'>", unsafe_allow_html=True)
 
     # Start at login
@@ -794,14 +902,27 @@ def show_settings_modal():
     with col_l1:
         st.markdown("<div class='pref-label'>Start at login</div>", unsafe_allow_html=True)
     with col_l2:
-        start_login = st.checkbox("Start at login", value=False, label_visibility="collapsed", key="chk_login")
+        start_login = st.checkbox(
+            "Start at login",
+            value=app_cfg.get("start_at_login", False),
+            label_visibility="collapsed",
+            key="chk_login",
+        )
     st.markdown("<hr style='border:0; border-top:1px solid #ebe9e1; margin: 10px 0;'>", unsafe_allow_html=True)
 
-    st.caption("Illustrative only: this website cannot access your screenshot folder or change OS preferences.")
+    st.caption("ScreenStash uses these settings on this device. Screenshots and extracted text stay local.")
 
     col_btn_left, col_btn_right = st.columns([7, 3])
     with col_btn_right:
         if st.button("Done", type="primary", use_container_width=True):
+            updated = dict(app_cfg)
+            updated.update({
+                "screenshot_dir": screenshot_dir,
+                "process_locally": proc_device,
+                "notify_on_results": notify_deadlines,
+                "start_at_login": start_login,
+            })
+            config.save_config(updated)
             st.rerun()
 
 
@@ -858,10 +979,10 @@ with st.sidebar:
     <div class="stash-device-card">
         <div style="font-size: 16px; margin-bottom: 4px;">🌐</div>
         <div class="stash-device-title">Your stash, on this device</div>
-        <div class="stash-device-text">Processing status is shown honestly. This demo uses sample content.</div>
+        <div class="stash-device-text">Your screenshots are processed locally and linked back to their original files.</div>
         <div class="stash-device-status">
             <span class="smart-dot-green"></span>
-            <span>{"Live local mode" if daemon_status else "Demo mode"}</span>
+            <span>{"Watching in background" if daemon_status else "Background watcher stopped"}</span>
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -895,7 +1016,8 @@ with col_top_right:
         with st.popover("+ Add screenshot"):
             uploaded_file = st.file_uploader("Upload screenshot to analyze", type=["png", "jpg", "jpeg", "webp"])
             if uploaded_file is not None:
-                save_dest = Path(app_cfg.get("screenshot_dir", str(config.detect_default_screenshot_dir()))) / uploaded_file.name
+                safe_name = Path(uploaded_file.name).name
+                save_dest = Path(app_cfg.get("screenshot_dir", str(config.detect_default_screenshot_dir()))) / safe_name
                 with open(save_dest, "wb") as f:
                     f.write(uploaded_file.getbuffer())
                 st.success(f"Saved! Processing...")
@@ -954,8 +1076,6 @@ def render_active_view(search_term: str):
 
     total_screens = stats.get("total", len(all_recs))
     review_count = sum(1 for r in all_recs if r.status == ProcessStatus.FAILED or r.category == Category.OTHER)
-    if review_count == 0 and len(all_recs) > 0:
-        review_count = 2  # Demonstration items if no failures
 
     # Display 4 Metric / KPI Cards
     col_k1, col_k2, col_k3, col_k4 = st.columns(4)
@@ -967,12 +1087,12 @@ def render_active_view(search_term: str):
                 <span class="kpi-icon-box kpi-icon-green">☑</span>
             </div>
             <div class="kpi-value-row">
-                <span class="kpi-num">{max(open_tasks_count, 4):02d}</span>
-                <span class="kpi-subtext">+2 this week</span>
+                <span class="kpi-num">{open_tasks_count:02d}</span>
+                <span class="kpi-subtext">from your screenshots</span>
             </div>
             <div class="kpi-footer-status">
                 <span class="kpi-bar-green"></span>
-                <span>2 need attention</span>
+                <span>{open_tasks_count} extracted</span>
             </div>
         </div>
         """, unsafe_allow_html=True)
@@ -985,12 +1105,12 @@ def render_active_view(search_term: str):
                 <span class="kpi-icon-box kpi-icon-peach">⏱</span>
             </div>
             <div class="kpi-value-row">
-                <span class="kpi-num">{max(deadlines_count, 3):02d}</span>
-                <span class="kpi-subtext">next 7 days</span>
+                <span class="kpi-num">{deadlines_count:02d}</span>
+                <span class="kpi-subtext">dates detected</span>
             </div>
             <div class="kpi-footer-status">
                 <span class="kpi-dot-peach"></span>
-                <span>Next one in 2 days</span>
+                <span>from processed screenshots</span>
             </div>
         </div>
         """, unsafe_allow_html=True)
@@ -1003,12 +1123,12 @@ def render_active_view(search_term: str):
                 <span class="kpi-icon-box kpi-icon-purple">📸</span>
             </div>
             <div class="kpi-value-row">
-                <span class="kpi-num">{max(total_screens, 18):02d}</span>
-                <span class="kpi-subtext">/ 12%</span>
+                <span class="kpi-num">{total_screens:02d}</span>
+                <span class="kpi-subtext">in your local stash</span>
             </div>
             <div class="kpi-footer-status">
                 <span class="kpi-dot-purple"></span>
-                <span>{max(total_screens - 2, 16)} organized automatically</span>
+                <span>{sum(1 for r in all_recs if r.status == ProcessStatus.PROCESSED)} organized</span>
             </div>
         </div>
         """, unsafe_allow_html=True)
@@ -1036,8 +1156,32 @@ def render_active_view(search_term: str):
 
     current_view = st.session_state.active_view
 
-    # ---------------- VIEW 1: OVERVIEW ----------------
     if current_view == "Overview":
+        st.subheader("Recently organized")
+        if not all_recs:
+            st.info("No screenshots have been organized yet. Take a screenshot in the watched folder and ScreenStash will process it here.")
+        else:
+            for record in all_recs[:8]:
+                category = html.escape(record.category)
+                title = html.escape(record.title or record.file_name)
+                summary = html.escape(record.summary or "No summary was extracted.")
+                source = html.escape(record.file_path)
+                with st.container(border=True):
+                    left, right = st.columns([5, 1])
+                    with left:
+                        st.markdown(f"**{title}** · `{category}`")
+                        st.caption(summary)
+                        st.caption(f"Source: {source}")
+                    with right:
+                        st.caption(record.status.value)
+                        if record.file_path:
+                            st.markdown(f"[Open original](file:///{source.replace(chr(92), '/')})")
+                    if record.tasks_list:
+                        st.write("Tasks: " + "; ".join(record.tasks_list))
+        st.divider()
+
+    # ---------------- VIEW 1: OVERVIEW ----------------
+    if False and current_view == "Overview":
         col_mid_left, col_mid_right = st.columns([1, 1])
 
         # Left Column: Deadline Calendar
@@ -1293,25 +1437,21 @@ def render_active_view(search_term: str):
             </div>
         """, unsafe_allow_html=True)
 
-        task_items = [
-            ("Submit project proposal", "Oct 24 • Due in 2 days", "assignment-brief.png", "Due date: October 24"),
-            ("Send final presentation slides", "Oct 23 • Tomorrow", "team-chat.png", "Slides due tomorrow Friday"),
-            ("Book a project check-in", "Oct 27 • Date needs confirmation", "calendar-invite.png", "Tentative check-in Tuesday"),
-            ("Read research paper", "Oct 29 • In 7 days", "paper-pdf.png", "Recommended reading for next sprint")
-        ]
-
-        if all_tasks:
-            for item in all_tasks[:4]:
-                task_items.insert(0, (item["task"], item["rec"].created_at[:10], item["rec"].file_name, item["rec"].summary[:50]))
-
-        for title, deadline, source, evidence in task_items:
+        if not all_tasks:
+            st.info("No tasks have been extracted from your screenshots yet.")
+        for index, item in enumerate(all_tasks):
+            title = item["task"]
+            source_record = item["rec"]
             col_t_check, col_t_btn = st.columns([8, 2])
             with col_t_check:
-                st.checkbox(f"**{title}** — *{deadline}*", key=f"task_chk_view_{title}")
+                st.checkbox(
+                    f"**{title}** — *{source_record.created_at[:10]}*",
+                    key=f"task_chk_view_{source_record.id}_{index}",
+                )
             with col_t_btn:
                 with st.popover("View evidence ↗"):
-                    st.caption(f"Source file: `{source}`")
-                    st.info(f"AI Evidence quote:\n\"{evidence}\"")
+                    st.caption(f"Source file: `{source_record.file_name}`")
+                    st.info(source_record.raw_ocr_text[:500] or source_record.summary)
 
         st.markdown("</div>", unsafe_allow_html=True)
 

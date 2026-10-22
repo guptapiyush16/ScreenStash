@@ -14,10 +14,10 @@ if %ERRORLEVEL% NEQ 0 (
 
 echo.
 echo [2/3] Configuring application, database, and shortcuts...
-python setup_app.py
+python screenstash.py install
 
 echo.
 echo [3/3] Installation Complete!
-echo ScreenStash is now active in the background.
+echo Complete the short onboarding screen to start ScreenStash.
 echo.
 pause

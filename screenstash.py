@@ -2,6 +2,9 @@
 ScreenStash CLI Management Tool.
 Usage:
     python screenstash.py setup       - Configure paths, shortcuts, and startup
+    python screenstash.py install     - Install dependencies and complete setup
+    python screenstash.py setup-ai    - Download the configured local AI model with Ollama
+    python screenstash.py setup-ai gemma3:4b - Select and download Gemma 3
     python screenstash.py start       - Start background monitoring service
     python screenstash.py stop        - Stop background monitoring service
     python screenstash.py status      - View background service status & stats
@@ -16,6 +19,7 @@ from pathlib import Path
 
 import config
 import database as db
+from ai_engine import DEFAULT_MODEL, MODEL_CHOICES, pull_model
 from background_service import is_daemon_running, stop_running_daemon
 from setup_app import run_setup
 from watcher import scan_existing_screenshots
@@ -60,6 +64,36 @@ def start_service():
     print("[✓] Service started in background. New screenshots will trigger 'ScreenStash Saved' popups.")
 
 
+def install():
+    """Install dependencies and run the setup wizard without forcing login startup."""
+    requirements = Path(__file__).parent / "requirements.txt"
+    subprocess.run([sys.executable, "-m", "pip", "install", "-r", str(requirements)], check=True)
+    run_setup(auto_start=False, start_at_login=False)
+    subprocess.run([sys.executable, str(Path(__file__).parent / "run_desktop.py")], check=False)
+
+
+def setup_ai():
+    """Select and download a local Ollama model while hiding model parameters."""
+    cfg = config.load_config()
+    requested_model = sys.argv[2] if len(sys.argv) > 2 else cfg.get("ollama_model", DEFAULT_MODEL)
+    valid_models = set(MODEL_CHOICES.values())
+    if requested_model not in valid_models:
+        print(f"[!] Unsupported model '{requested_model}'. Choose one of: {', '.join(sorted(valid_models))}")
+        return
+    model = requested_model
+    cfg["ollama_model"] = model
+    config.save_config(cfg)
+    print(f"[*] Downloading local AI model {model}. Ollama reports progress below.")
+    result_code = pull_model(model)
+    if result_code == 127:
+        print("[!] Ollama is not installed or is not on PATH. Install Ollama, then run this command again.")
+        return
+    if result_code == 0:
+        print("[✓] Local AI model is ready. Screenshots will be processed on this device.")
+    else:
+        print("[!] Ollama could not download the model. The offline fallback remains available.")
+
+
 def main():
     if len(sys.argv) < 2:
         print(__doc__)
@@ -69,6 +103,10 @@ def main():
 
     if cmd == "setup":
         run_setup()
+    elif cmd == "install":
+        install()
+    elif cmd == "setup-ai":
+        setup_ai()
     elif cmd == "start":
         start_service()
     elif cmd == "stop":
@@ -86,7 +124,7 @@ def main():
         count = scan_existing_screenshots()
         print(f"[✓] Processed {count} new screenshot(s).")
     else:
-        print(f"[!] Unknown command '{cmd}'. Available commands: setup, start, stop, status, dashboard, scan")
+        print(f"[!] Unknown command '{cmd}'. Available commands: install, setup, setup-ai, start, stop, status, dashboard, scan")
 
 
 if __name__ == "__main__":

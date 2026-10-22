@@ -16,6 +16,7 @@ import config
 import database as db
 from background_service import is_daemon_running
 from desktop_window import open_desktop_window
+from watcher import ScreenshotWatcher
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +53,9 @@ def main():
 
     # 2. Check Background Watcher
     watcher = None
-    if is_daemon_running():
+    if not cfg.get("onboarding_complete", False):
+        print("[*] First-run onboarding is required before background monitoring starts.")
+    elif is_daemon_running():
         print("[*] Background daemon is already active. Skipping duplicate watcher.")
     else:
         watcher = ScreenshotWatcher(screenshot_dir)
@@ -84,7 +87,9 @@ def main():
     )
 
     # 5. Wait for server socket to be ready
-    wait_for_server(port, max_seconds=10.0)
+    if not wait_for_server(port, max_seconds=10.0):
+        streamlit_proc.terminate()
+        raise RuntimeError("ScreenStash dashboard failed to start.")
     time.sleep(1.0)
 
     print("[✓] Opening ScreenStash native desktop window...")

@@ -9,7 +9,7 @@ ScreenStash is a local-first desktop application that runs silently in the backg
 ## ✨ Features
 
 - ⚡ **Automatic Detection**: Monitors your operating system's default screenshot folder (`Win+PrtScn`, `Win+Shift+S`, Snipping Tool) with sub-second debounce protection.
-- 🔍 **Local OCR & AI Pipeline**: Extracts text via Tesseract OCR and structures insights using local open-weight models via **Ollama** (`llama3`, `mistral`, `phi3`).
+- 🔍 **Local OCR & AI Pipeline**: Extracts text via Tesseract OCR and structures insights using local open-weight models via **Ollama**, with Gemma 3 as the default.
 - 🛡️ **Zero-Crash Heuristic Fallback**: Includes an intelligent offline regex/linguistic engine that extracts to-do checklists, dates, receipts, and categories even if Ollama or Tesseract are not installed yet.
 - 🔒 **100% Private & Local-First**: No cloud accounts, external databases, or network telemetry. Your images and extracted data never leave your computer.
 - 🗄️ **Clean OS App Data Separation**: Database (`screenstash.db`), logs (`screenstash.log`), and settings are stored in `%LOCALAPPDATA%\ScreenStash` (Windows) or `~/.local/share/ScreenStash` (Linux/macOS), keeping your code repo pristine.
@@ -25,7 +25,7 @@ ScreenStash is a local-first desktop application that runs silently in the backg
 | **Language** | Python 3.10+ | Core processing pipeline & application logic |
 | **Filesystem Watcher** | Watchdog | Cross-platform directory event monitoring with debouncing |
 | **OCR Engine** | Tesseract (pytesseract) | High-accuracy local optical character recognition |
-| **Local AI Engine** | Ollama (`llama3:latest`) | Open-weight model for structured JSON parsing |
+| **Local AI Engine** | Ollama (`gemma3:4b`) | Local model for structured JSON parsing |
 | **Fallback AI** | Pure Python NLP / Regex | Resilient offline extraction of dates, amounts, and tasks |
 | **Database** | SQLite3 | Fast, embedded, local-first indexed storage |
 | **Desktop UI** | Streamlit | Modern dashboard with instant search, metrics, and edit popovers |
@@ -60,48 +60,96 @@ ScreenStash/
 ### 1. Prerequisites
 - Python 3.10 or newer installed
 - (Optional, Recommended) [Tesseract OCR](https://github.com/UB-Mannheim/tesseract/wiki) for Windows
-- (Optional, Recommended) [Ollama](https://ollama.ai/) with your preferred model (`ollama pull llama3`)
+- (Optional, Recommended) [Ollama](https://ollama.ai/); ScreenStash can download `gemma3:4b` for you
 
 > **Note**: Even if you do not have Tesseract or Ollama installed yet, ScreenStash will gracefully run using its built-in fallback engine!
 
-### 2. 1-Click Installation & Setup
+### 2. Installation & first-run onboarding
 
 #### On Windows:
-Double-click `install.bat` or run in terminal:
+Choose either installation path:
+
+**Download path**
+
+1. Download `ScreenStash-Windows.zip` from the ScreenStash landing page.
+2. Extract the ZIP to a folder you control.
+3. Double-click `install.bat`.
+
+**CLI path**
+
+Open PowerShell or Command Prompt and run:
+
 ```bash
-python setup_app.py
+git clone https://github.com/guptapiyush16/ScreenStash.git
+cd ScreenStash
+python screenstash.py install
 ```
-This automatically:
+
+The installer installs the Python dependencies and opens the local ScreenStash onboarding screen. It does not start monitoring or register login startup before the onboarding is completed.
+
+ScreenStash then opens a short onboarding screen that:
 - Installs dependencies from `requirements.txt`
 - Auto-detects your Windows screenshot folder (including OneDrive paths)
-- Initializes the local SQLite database
-- Creates a **Desktop shortcut** (`ScreenStash Dashboard.lnk`)
-- Registers ScreenStash in **Windows Startup** (`shell:startup`) so it runs silently on boot
-- Starts the silent background monitoring service (`background.pyw`) immediately!
+- Explains that screenshots may contain private information
+- Lets you confirm or change the folder it watches
+- Explains local AI processing and the optional model download
+- Starts the background watcher after you confirm
+- Adds Windows login startup only when you explicitly opt in
 
 #### On macOS / Linux:
 ```bash
-pip install -r requirements.txt
-python setup_app.py
+git clone https://github.com/guptapiyush16/ScreenStash.git
+cd ScreenStash
+python3 screenstash.py install
+```
+The app watches the folder you select during onboarding. It never takes screenshots itself.
+
+### 3. Set up Ollama and Gemma 3 (optional local AI)
+
+ScreenStash can use Ollama and the Gemma 3 model for structured extraction. This is an optional local enhancement; the offline fallback remains available if Ollama is not installed.
+
+1. Install Ollama from [ollama.com/download](https://ollama.com/download).
+2. Start Ollama if it is not already running.
+3. From the ScreenStash folder, run:
+
+```bash
+python screenstash.py setup-ai gemma3:4b
 ```
 
-### 3. Background Service & Live Popups
+This runs `ollama pull gemma3:4b` and shows Ollama's download progress. The model can require several gigabytes of disk space and the first download may take a while. ScreenStash stores the selected model in the local configuration and uses it through Ollama's local API at `http://localhost:11434`.
+
+Verify the setup with:
+
+```bash
+ollama list
+```
+
+The dashboard shows whether the selected model is **Ready** or **Download needed**. ScreenStash does not send screenshots to a cloud AI service.
+
+### 4. Background Service & Live Popups
 
 Once setup is complete, ScreenStash runs 24/7 in the background:
 1. **Take a screenshot normally** anywhere on your PC (`Win+Shift+S` or `Win+PrtScn`).
-2. A sleek dark-mode popup appears in the bottom-right corner:
-   **`📸 ScreenStash Saved` — AI is organizing your screenshot...**
+2. A subtle popup appears:
+   **`ScreenStash is working` — Processing locally. Your screenshot stays on this device.**
 3. Once processed, it updates to:
-   **`✓ Organized as Task`** (or `Event`, `Receipt`).
+   **`Task found in your screenshot`** (or `Event`, `Receipt`, `Reference`).
 4. Click the popup at any time to open your organized dashboard!
 
-### 4. CLI Control Center (`screenstash.py`)
+If you want the optional local Ollama model, run:
+```bash
+python screenstash.py setup-ai gemma3:4b
+```
+The command displays Ollama's download progress. If Ollama is unavailable, the built-in OCR/heuristic fallback remains usable.
+
+### 5. CLI Control Center (`screenstash.py`)
 ```bash
 python screenstash.py status      # Check if background service is running
 python screenstash.py start       # Start background daemon
 python screenstash.py stop        # Stop background daemon
 python screenstash.py dashboard   # Open dashboard in browser
 python screenstash.py scan        # Scan folder for existing screenshots
+python screenstash.py setup-ai gemma3:4b  # Download the Gemma 3 local model
 ```
 
 ---
@@ -112,7 +160,7 @@ Settings are saved in `%LOCALAPPDATA%/ScreenStash/config.json`. You can also edi
 
 - **Screenshot Directory**: Defaults to your OS screenshot folder (with automatic OneDrive redirection support).
 - **Ollama Endpoint**: Defaults to `http://localhost:11434`.
-- **Ollama Model**: Defaults to `llama3:latest` (or `mistral`, `phi3`, etc.).
+- **Ollama Model**: Defaults to `gemma3:4b`. You can also choose Llama 3.2 during onboarding.
 - **Tesseract Binary Path**: `C:\Program Files\Tesseract-OCR\tesseract.exe` (or `tesseract` on Linux/macOS).
 
 ---

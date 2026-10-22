@@ -33,7 +33,7 @@ def handle_screenshot_event(file_path_str: str):
     logger.info(f"Processing new screenshot from background daemon: {file_name}")
 
     try:
-        process_screenshot(file_path_str)
+        return process_screenshot(file_path_str)
     except Exception as e:
         logger.error(f"Error handling screenshot {file_path_str}: {e}", exc_info=True)
 
@@ -75,13 +75,7 @@ class BackgroundDaemon:
 
         event_handler = ScreenshotEventHandler(callback=handle_screenshot_event)
         self.watcher = ScreenshotWatcher(screenshot_dir)
-        
-        # Override the handler to use our custom feedback handler
-        from watchdog.observers import Observer
-        self.watcher.observer = Observer()
-        self.watcher.observer.schedule(event_handler, str(self.watcher.directory), recursive=False)
-        self.watcher.observer.start()
-        self.watcher.is_active = True
+        self.watcher.start(callback=handle_screenshot_event)
 
         try:
             while self._running:
@@ -106,7 +100,11 @@ def is_daemon_running() -> bool:
         with open(PID_FILE, "r") as f:
             pid = int(f.read().strip())
         import psutil
-        return psutil.pid_exists(pid)
+        if not psutil.pid_exists(pid):
+            PID_FILE.unlink(missing_ok=True)
+            return False
+        process = psutil.Process(pid)
+        return process.name().lower().startswith(("python", "screenstash"))
     except Exception:
         return False
 
@@ -115,9 +113,13 @@ def stop_running_daemon() -> bool:
     """Terminates any active background daemon process."""
     if not PID_FILE.exists():
         return False
+    pid = None
     try:
         with open(PID_FILE, "r") as f:
             pid = int(f.read().strip())
+        if not is_daemon_running():
+            PID_FILE.unlink(missing_ok=True)
+            return False
         os.kill(pid, signal.SIGTERM)
         time.sleep(0.5)
         if PID_FILE.exists():
