@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title">
+  <title>ScreenStash</title>
+  <rect width="64" height="64" rx="16" fill="#18181b"/>
+  <rect x="21" y="21" width="8" height="24" rx="4" fill="#cbfb4d"/>
+  <rect x="35" y="25" width="8" height="16" rx="4" fill="#ffffff"/>
+</svg>
