@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ScreenStash — Turn Screenshots into Actionable Plans</title>
+  <meta name="description" content="ScreenStash runs silently in the background, detects screenshots, extracts text with local OCR, and organizes them automatically with AI.">
+  <link rel="stylesheet" href="style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📸</text></svg>">
+</head>
+<body>
+
+  <!-- Top Announcement Bar -->
+  <header class="top-bar">
+    <a href="#how-it-works" class="top-bar-link">
+      <span class="top-dot"></span>
+      A calmer way to keep what matters ↗
+    </a>
+  </header>
+
+  <!-- Navigation Bar -->
+  <nav class="navbar" id="top">
+    <a href="#" class="brand-logo">
+      <span class="logo-badge"></span>
+      screenstash
+    </a>
+
+    <div class="nav-links">
+      <a href="#how-it-works">How it works</a>
+      <a href="#why-screenstash">Why ScreenStash</a>
+      <a href="#privacy">Privacy</a>
+    </div>
+
+    <a href="ScreenStash-Windows.zip" download class="btn-nav-demo">
+      Download v0.1 MVP ⤓
+    </a>
+  </nav>
+
+  <!-- Hero Section -->
+  <main>
+    <section class="hero-section">
+      <div class="hero-content">
+        <div class="tag-label">
+          <span class="tag-star">✦</span>
+          YOUR SECOND BRAIN, ON AUTOPILOT
+        </div>
+
+        <h1 class="hero-title">
+          Your screenshots<br>
+          <span class="highlight-underline">have a next step.</span>
+        </h1>
+
+        <p class="hero-subtitle">
+          That deadline you meant to remember. That place you wanted to visit. That tiny detail you knew you'd need later.
+          <br><br>
+          ScreenStash turns screenshots into organized, useful things — without adding another task to your day.
+        </p>
+
+        <!-- Actions: Download Button & Secondary Link -->
+        <div class="hero-actions">
+          <a href="ScreenStash-Windows.zip" download class="btn-primary" id="hero-download-btn">
+            Download for Windows ⤓
+          </a>
+          <a href="#how-it-works" class="btn-secondary">
+            How it works ↓
+          </a>
+        </div>
+
+        <!-- Terminal / CMD Command Box -->
+        <div class="cmd-install-box">
+          <div class="cmd-header">
+            <span class="cmd-title">
+              💻 CMD / Terminal 1-Line Setup
+            </span>
+            <span style="font-size: 11px; color: #a1a1aa;">Windows 10/11</span>
+          </div>
+          <div class="cmd-code-row">
+            <code class="cmd-code" id="hero-cmd">git clone https://github.com/guptapiyush16/ScreenStash.git &amp;&amp; cd ScreenStash &amp;&amp; install.bat</code>
+            <button class="btn-copy copy-btn-trigger" data-target="hero-cmd" title="Copy to clipboard">
+              Copy 📋
+            </button>
+          </div>
+        </div>
+
+        <div class="hero-footer-hint">
+          <div class="hint-icons">
+            <span class="hint-dot lime">✦</span>
+            <span class="hint-dot peach">●</span>
+            <span class="hint-dot gray">⌘</span>
+          </div>
+          <span><strong>Less sorting. More living.</strong> Designed to work quietly in the background.</span>
+        </div>
+      </div>
+
+      <!-- Hero Visual Mockup -->
+      <div class="hero-mockup-wrapper">
+        <!-- Floating top badge -->
+        <div class="floating-badge-top">
+          <div class="badge-icon-purple">📋</div>
+          <div>
+            <div class="badge-text-title">Assignment brief</div>
+            <div class="badge-text-sub">Task found · due Friday ✓</div>
+          </div>
+        </div>
+
+        <!-- App Window Mockup -->
+        <div class="mockup-window">
+          <div class="window-header">
+            <div class="window-dots">
+              <span class="w-dot" style="background:#ff5f56;"></span>
+              <span class="w-dot" style="background:#ffbd2e;"></span>
+              <span class="w-dot" style="background:#27c93f;"></span>
+            </div>
+            <span style="font-weight: 600; color: #52525b;">ScreenStash <span style="color:#65a30d;">● local</span></span>
+            <span style="font-size: 10px;">•••</span>
+          </div>
+
+          <div class="window-body">
+            <!-- Sidebar -->
+            <div class="mockup-sidebar">
+              <div class="sidebar-title">YOUR SPACE</div>
+              <div class="sidebar-item active">
+                <span>📁 Overview</span>
+                <span class="item-count">8</span>
+              </div>
+              <div class="sidebar-item">
+                <span>☑️ Tasks</span>
+                <span class="item-count">3</span>
+              </div>
+              <div class="sidebar-item">
+                <span>🗓️ Events</span>
+                <span class="item-count">2</span>
+              </div>
+              <div class="sidebar-item">
+                <span>📌 References</span>
+                <span class="item-count">3</span>
+              </div>
+            </div>
+
+            <!-- Main Panel -->
+            <div class="mockup-main">
+              <div class="main-head-date">WEDNESDAY, OCTOBER 21</div>
+              <div class="main-head-title">Your mind, uncluttered.</div>
+
+              <div class="metric-cards-row">
+                <div class="metric-card-box">
+                  <div class="metric-box-label">Screenshots sorted</div>
+                  <div class="metric-box-num">24</div>
+                  <div class="metric-box-sub">↑ 6 this week</div>
+                </div>
+                <div class="metric-card-box">
+                  <div class="metric-box-label">Things to do</div>
+                  <div class="metric-box-num" style="color:#7c3aed;">03</div>
+                  <div class="metric-box-sub">Nothing slipping</div>
+                </div>
+              </div>
+
+              <!-- List -->
+              <div class="organized-list-head">
+                <span class="list-title">Recently organized</span>
+                <span class="list-view-all">View all ↗</span>
+              </div>
+
+              <div class="org-item">
+                <div class="org-left">
+                  <div class="org-icon purple">✦</div>
+                  <div>
+                    <div class="org-text-name">Submit project proposal</div>
+                    <div class="org-text-meta">Task · from screenshot</div>
+                  </div>
+                </div>
+                <div class="org-date">OCT 24</div>
+              </div>
+
+              <div class="org-item">
+                <div class="org-left">
+                  <div class="org-icon peach">◆</div>
+                  <div>
+                    <div class="org-text-name">Sunday design market</div>
+                    <div class="org-text-meta">Event · date detected</div>
+                  </div>
+                </div>
+                <div class="org-date">OCT 25</div>
+              </div>
+
+              <div class="org-item">
+                <div class="org-left">
+                  <div class="org-icon green">⊟</div>
+                  <div>
+                    <div class="org-text-name">Color palette inspiration</div>
+                    <div class="org-text-meta">Reference · saved</div>
+                  </div>
+                </div>
+                <div class="org-date">JUST NOW</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Floating bottom toast -->
+        <div class="floating-badge-bottom">
+          <div class="org-icon peach">🗓️</div>
+          <div>
+            <div class="badge-text-title">Weekend market</div>
+            <div class="badge-text-sub">Saved as an event · 10:00 AM</div>
+          </div>
+        </div>
+
+        <div class="mockup-caption">
+          <span style="color:#65a30d;">●</span> A little more organized, automatically.
+        </div>
+      </div>
+    </section>
+
+    <!-- Ticker Bar -->
+    <section class="ticker-section">
+      <div class="ticker-inner">
+        <span class="ticker-label">MADE FOR THE THINGS YOU MEAN TO REMEMBER</span>
+        <div class="ticker-items">
+          <div class="ticker-item orange"><span>↗</span> Deadlines</div>
+          <div class="ticker-item lime"><span>✦</span> Ideas</div>
+          <div class="ticker-item teal"><span>◆</span> Places</div>
+          <div class="ticker-item"><span>⊟</span> Useful details</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Section 2: Step-by-Step Flow -->
+    <section class="steps-section" id="how-it-works">
+      <div class="section-head-center">
+        <div class="section-tag">IT'S ALMOST TOO EASY</div>
+        <h2 class="section-title-stacked">
+          One screenshot.<br>
+          <span class="muted-line">One less thing to remember.</span>
+        </h2>
+        <p class="section-desc">
+          No new habit to build. No folder to maintain. Just keep capturing what matters.
+        </p>
+      </div>
+
+      <div class="steps-grid">
+        <!-- Step 1 -->
+        <div class="step-card">
+          <div class="step-card-content">
+            <div class="step-top-row">
+              <span class="step-num">01</span>
+              <div class="step-icon-badge purple">◫</div>
+            </div>
+            <h3 class="step-card-title">Capture like you always do.</h3>
+            <p class="step-card-desc">
+              Screenshot an assignment, a message, an idea, a place — anything you don't want to lose.
+            </p>
+          </div>
+          <div class="step-visual-box">
+            <div class="screen-mockup-snippet">
+              <div class="screen-snippet-line"></div>
+              <div class="screen-snippet-line" style="width: 50%;"></div>
+              <div class="screen-snippet-highlight">Project proposal due Friday</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 2 -->
+        <div class="step-card">
+          <div class="step-card-content">
+            <div class="step-top-row">
+              <span class="step-num">02</span>
+              <div class="step-icon-badge lime">✦</div>
+            </div>
+            <h3 class="step-card-title">It figures out what matters.</h3>
+            <p class="step-card-desc">
+              On your computer, AI reads the screenshot and finds the useful bits — dates, tasks, names, and context.
+            </p>
+          </div>
+          <div class="step-visual-box">
+            <div class="ocr-scan-box">
+              <div class="ocr-laser-line"></div>
+              <div style="font-size: 11px; color: #52525b; line-height: 1.4;">
+                deadline: Friday 3:00 PM<br>
+                review design specs
+              </div>
+              <span class="ocr-tag-floating">✦ Finding the useful bits</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 3 -->
+        <div class="step-card">
+          <div class="step-card-content">
+            <div class="step-top-row">
+              <span class="step-num">03</span>
+              <div class="step-icon-badge peach">↗</div>
+            </div>
+            <h3 class="step-card-title">Find it when you need it.</h3>
+            <p class="step-card-desc">
+              Tasks become tasks. Events become events. Everything else becomes a searchable reference.
+            </p>
+          </div>
+          <div class="step-visual-box">
+            <div class="category-chips-col">
+              <div class="chip-row">
+                <span style="color:#7c3aed;">✓ Project proposal</span>
+                <span style="font-size: 10px; color:#a1a1aa;">Task</span>
+              </div>
+              <div class="chip-row">
+                <span style="color:#c2410c;">✦ Design market</span>
+                <span style="font-size: 10px; color:#a1a1aa;">Event</span>
+              </div>
+              <div class="chip-row">
+                <span style="color:#15803d;">⊟ Color inspiration</span>
+                <span style="font-size: 10px; color:#a1a1aa;">Saved</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Section 3: A Peek Inside (Interactive Filter Showcase) -->
+    <section class="peek-section" id="why-screenstash">
+      <div class="peek-grid">
+        <div>
+          <div class="tag-label">
+            <span class="tag-star">✦</span>
+            A PEEK INSIDE
+          </div>
+          <h2 class="hero-title" style="font-size: clamp(32px, 3.8vw, 48px); margin-bottom: 16px;">
+            Your screenshots,<br>
+            <span class="highlight-underline">with a little context.</span>
+          </h2>
+          <p class="section-desc" style="margin-bottom: 24px;">
+            Instead of a camera roll full of "I'll get to this later," you get a tidy collection of things you can actually use.
+          </p>
+
+          <!-- Interactive Pills -->
+          <div class="filter-pills-row">
+            <button class="filter-pill active" data-category="all">Everything 8</button>
+            <button class="filter-pill" data-category="tasks">Tasks 3</button>
+            <button class="filter-pill" data-category="events">Events 2</button>
+            <button class="filter-pill" data-category="references">References 3</button>
+          </div>
+          <p style="font-size: 12px; color: #a1a1aa;">Try the filters to see how ScreenStash keeps different things in their place.</p>
+        </div>
+
+        <!-- Peek Window Cards -->
+        <div class="peek-window">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+            <span style="font-size: 11px; font-weight: 700; color: #a1a1aa; letter-spacing: 0.05em;">YOUR STASH / OCTOBER</span>
+            <span style="font-size: 11px; color: #71717a;">🔍 Search your stash ⌘K</span>
+          </div>
+
+          <div class="peek-cards-container">
+            <div class="stash-card-preview" data-category="references">
+              <div class="stash-card-palette">
+                <div class="palette-block" style="background: #fed7aa;"></div>
+                <div class="palette-block" style="background: #bbf7d0;"></div>
+                <div class="palette-block" style="background: #3b82f6;"></div>
+              </div>
+              <div class="stash-card-title">Color study no. 04</div>
+              <div class="stash-card-meta">Saved as reference · Just now</div>
+            </div>
+
+            <div class="stash-card-preview" data-category="references">
+              <div style="background:#fef3c7; height:45px; border-radius:6px; display:flex; align-items:center; padding:10px; margin-bottom:12px; font-family:serif; font-size:14px; color:#92400e;">
+                Slow Sunday pasta
+              </div>
+              <div class="stash-card-title">Pasta recipe</div>
+              <div class="stash-card-meta">Saved as reference · 2 days ago</div>
+            </div>
+
+            <div class="stash-card-preview" data-category="tasks">
+              <div style="background:#ede9fe; padding:8px 10px; border-radius:6px; margin-bottom:10px; font-size:11px; color:#6b21a8; font-weight:600;">
+                ☐ Submit Q4 Roadmap deck
+              </div>
+              <div class="stash-card-title">Product Roadmap</div>
+              <div class="stash-card-meta">Due tomorrow at 5 PM</div>
+            </div>
+
+            <div class="stash-card-preview" data-category="events">
+              <div style="background:#ffedd5; padding:8px 10px; border-radius:6px; margin-bottom:10px; font-size:11px; color:#9a3412; font-weight:600;">
+                🗓️ Zoom Sync · Friday 3 PM
+              </div>
+              <div class="stash-card-title">Design Review Call</div>
+              <div class="stash-card-meta">Added to calendar feed</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Practical Benefits -->
+    <section class="benefits-section">
+      <div class="section-head-center">
+        <div class="section-tag">SMALL MAGIC, PRACTICAL BENEFITS</div>
+        <h2 class="section-title-stacked">
+          Less admin for your<br>
+          already-full brain.
+        </h2>
+        <p class="section-desc">
+          ScreenStash takes the little bits of work out of keeping track.
+        </p>
+      </div>
+
+      <div class="benefits-grid">
+        <!-- Benefit 1 -->
+        <div class="benefit-card">
+          <div class="benefit-icon-circle purple">✦</div>
+          <h3 class="benefit-title">It understands the why.</h3>
+          <p class="benefit-desc">
+            Not just text extraction. ScreenStash looks for the useful intent behind a screenshot — a deadline to remember, an event to plan for, or a detail to keep close.
+          </p>
+          <div class="benefit-subcard">
+            <span style="color:#7c3aed; font-weight:600;">✓ "Submit the form"</span>
+            <span style="color:#a1a1aa; font-size:11px;">Becomes a task ↗</span>
+          </div>
+          <div class="benefit-subcard">
+            <span style="color:#c2410c; font-weight:600;">✦ "Doors open at 7"</span>
+            <span style="color:#a1a1aa; font-size:11px;">Becomes an event detail ↗</span>
+          </div>
+        </div>
+
+        <div style="display:flex; flex-direction:column; gap:24px;">
+          <!-- Benefit 2 -->
+          <div class="benefit-card" style="padding: 24px;">
+            <div class="benefit-icon-circle green">🔒</div>
+            <h3 class="benefit-title" style="font-size:19px;">Private by design.</h3>
+            <p class="benefit-desc" style="font-size:13px; margin-bottom:12px;">
+              Your screenshots can contain personal things. The goal is to process and store them locally, not turn your camera roll into somebody else's dataset.
+            </p>
+            <a href="#privacy" style="font-size:12px; font-weight:700; color:#15803d;">Our privacy approach ↗</a>
+          </div>
+
+          <!-- Benefit 3 -->
+          <div class="benefit-card" style="padding: 24px;">
+            <div class="benefit-icon-circle orange">🔍</div>
+            <h3 class="benefit-title" style="font-size:19px;">Find the thing. Fast.</h3>
+            <p class="benefit-desc" style="font-size:13px; margin-bottom:12px;">
+              Search by what you remember — a topic, a person, a date, or a detail. No more scrolling through hundreds of screenshots.
+            </p>
+            <div class="search-mockup-input">
+              <span>🔍</span> "that assignment due Friday"
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Privacy Section -->
+    <section class="privacy-section" id="privacy">
+      <div class="radar-graphic-box">
+        <div class="radar-rings">
+          <div class="radar-core">
+            <div class="radar-core-dot"></div>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="tag-label">YOUR STUFF STAYS YOURS</div>
+        <h2 class="hero-title" style="font-size: clamp(34px, 4vw, 50px); margin-bottom: 20px;">
+          A little more helpful.<br>
+          A lot less creepy.
+        </h2>
+        <p class="section-desc" style="margin-bottom: 28px;">
+          Screenshots can be personal. ScreenStash is being designed around local-first processing, so your private moments don't need to leave your computer to become useful.
+        </p>
+
+        <div class="privacy-checklist">
+          <div class="check-item">
+            <div class="check-bullet">✓</div>
+            <div>
+              <div class="check-title">Local-first processing</div>
+              <div class="check-desc">Designed to use on-device AI and OCR. No external servers receive your captures.</div>
+            </div>
+          </div>
+
+          <div class="check-item">
+            <div class="check-bullet">✓</div>
+            <div>
+              <div class="check-title">Your files stay in your control</div>
+              <div class="check-desc">Keep originals in your existing OS screenshots folder. SQLite stays on your hard drive.</div>
+            </div>
+          </div>
+
+          <div class="check-item">
+            <div class="check-bullet">✓</div>
+            <div>
+              <div class="check-title">No account needed for MVP</div>
+              <div class="check-desc">Your personal stash doesn't need a cloud login, email verification, or tracking.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Dark High-Impact Bottom CTA Banner -->
+    <section class="dark-cta-section" id="download">
+      <div class="dark-cta-inner">
+        <div class="dark-tag">MAKE ROOM IN YOUR HEAD</div>
+        <h2 class="dark-title">
+          Keep the screenshot.<br>
+          <span class="lime-text">Lose the mental tab.</span>
+        </h2>
+        <p class="dark-subtitle">
+          Let the little things organize themselves, so you can get back to the big things.
+        </p>
+
+        <div class="dark-actions">
+          <a href="ScreenStash-Windows.zip" download class="btn-lime">
+            Download ScreenStash for Windows ⤓
+          </a>
+
+          <!-- Dark Terminal Box -->
+          <div class="dark-cmd-box">
+            <div class="dark-cmd-text" id="footer-cmd">
+              git clone https://github.com/guptapiyush16/ScreenStash.git &amp;&amp; cd ScreenStash &amp;&amp; install.bat
+            </div>
+            <button class="btn-copy-dark copy-btn-trigger" data-target="footer-cmd" title="Copy command">
+              Copy 📋
+            </button>
+          </div>
+          <span style="font-size: 12px; color: #71717a;">Runs locally on Windows 10 &amp; 11 • Open-source &amp; 100% private</span>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <div class="footer-inner">
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <span class="logo-badge" style="background:#27272a;"></span>
+        <span style="font-weight:700; color:#e4e4e7;">screenstash</span>
+        <span style="margin-left: 10px; font-size:12px;">Made for the things you mean to remember.</span>
+      </div>
+
+      <div class="footer-links">
+        <a href="#how-it-works">How it works</a>
+        <a href="#privacy">Privacy</a>
+        <a href="#top">Back to top ↑</a>
+      </div>
+    </div>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>

@@ -1,0 +1,16 @@
+Flow.md
+tech.md
+Decisions.md
+Decisions.mc
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.log
+
+# Environments
+.env
+venv/
+.venv/
+env/
