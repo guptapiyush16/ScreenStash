@@ -40,6 +40,16 @@ st.markdown("""
         font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
     }
     
+    /* Native Desktop Mode: Hide Streamlit Web Chrome, Menus & Headers */
+    #MainMenu { visibility: hidden !important; display: none !important; }
+    header[data-testid="stHeader"] { visibility: hidden !important; height: 0 !important; }
+    footer { visibility: hidden !important; display: none !important; }
+    div[data-testid="stDecoration"] { display: none !important; }
+    div[data-testid="stStatusWidget"] { display: none !important; }
+    .stDeployButton, [data-testid="stDeployButton"] { display: none !important; }
+    [data-testid="stToolbar"] { display: none !important; }
+    .block-container { padding-top: 1.2rem !important; }
+    
     /* Header Gradient */
     .app-header {
         background: linear-gradient(135deg, #1e1e2f 0%, #11111b 100%);

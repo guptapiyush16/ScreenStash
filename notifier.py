@@ -131,9 +131,14 @@ def render_standalone_popup(
 
         def on_click(event=None):
             try:
-                webbrowser.open(dashboard_url)
+                run_desktop_path = str(Path(__file__).parent / "run_desktop.py")
+                flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP if sys.platform == "win32" else 0
+                subprocess.Popen([sys.executable, run_desktop_path], creationflags=flags, close_fds=True)
             except Exception:
-                pass
+                try:
+                    webbrowser.open(dashboard_url)
+                except Exception:
+                    pass
             try:
                 root.destroy()
             except Exception:

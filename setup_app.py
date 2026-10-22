@@ -87,13 +87,19 @@ def run_setup(auto_start: bool = True):
         background_script = str(project_dir / "background.pyw")
         run_desktop_script = str(project_dir / "run_desktop.py")
 
-        # 3a. Desktop Shortcut for Dashboard
-        desktop_shortcut = desktop_dir / "ScreenStash Dashboard.lnk"
+        # 3a. Desktop Shortcut for Native Desktop App
+        desktop_shortcut = desktop_dir / "ScreenStash.lnk"
+        old_shortcut = desktop_dir / "ScreenStash Dashboard.lnk"
+        if old_shortcut.exists():
+            try:
+                old_shortcut.unlink()
+            except Exception:
+                pass
         create_windows_shortcut(
             target_path=python_exe,
             arguments=f'"{run_desktop_script}"',
             shortcut_path=desktop_shortcut,
-            description="Open ScreenStash Dashboard"
+            description="Open ScreenStash Desktop App"
         )
         print(f"[✓] Created Desktop shortcut: {desktop_shortcut.name}")
 
