@@ -2,6 +2,7 @@
 ScreenStash — Personalized Desktop Dashboard.
 Implements the editorial, high-fidelity light workspace aesthetic matching the
 design mockups across Overview, Tasks, Calendar, References, and All Screenshots views.
+Includes the full sidebar navigation and the Settings preferences modal matching photos 1, 2, and 3.
 """
 
 import os
@@ -30,7 +31,7 @@ st.set_page_config(
     page_title="ScreenStash — Your Workspace",
     page_icon="📸",
     layout="wide",
-    initial_sidebar_state="collapsed"
+    initial_sidebar_state="expanded"
 )
 
 # 2. Design System & CSS
@@ -59,23 +60,162 @@ st.markdown("""
         max-width: 1400px !important;
     }
 
-    /* Top Navigation Bar & Breadcrumb */
-    .top-nav {
+    /* Sidebar Styling Matching Photo 2 */
+    section[data-testid="stSidebar"] {
+        background-color: #f7f6f2 !important;
+        border-right: 1px solid #ebe9e1 !important;
+    }
+    section[data-testid="stSidebar"] .block-container {
+        padding-top: 1rem !important;
+        padding-left: 1.2rem !important;
+        padding-right: 1.2rem !important;
+    }
+
+    .sidebar-brand {
         display: flex;
-        justify-content: space-between;
         align-items: center;
-        padding-bottom: 16px;
-        border-bottom: 1px solid #ebe9e1;
-        margin-bottom: 20px;
+        gap: 10px;
+        margin-bottom: 24px;
+        padding-bottom: 8px;
     }
-    .breadcrumb-text {
-        font-size: 13px;
-        color: #71717a;
-        font-weight: 500;
+    .sidebar-logo-icon {
+        width: 24px;
+        height: 24px;
+        background: #e4e4e7;
+        border-radius: 6px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 14px;
     }
-    .breadcrumb-active {
+    .sidebar-brand-name {
+        font-size: 16px;
+        font-weight: 700;
         color: #18181b;
+        letter-spacing: -0.01em;
+    }
+
+    .sidebar-section-title {
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: #a1a1aa;
+        margin-top: 18px;
+        margin-bottom: 8px;
+    }
+
+    .nav-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 7px 10px;
+        border-radius: 8px;
+        font-size: 13px;
+        font-weight: 500;
+        color: #52525b;
+        margin-bottom: 2px;
+        text-decoration: none;
+        cursor: pointer;
+        transition: background 0.15s ease, color 0.15s ease;
+    }
+    .nav-item:hover {
+        background: #eeede8;
+        color: #18181b;
+    }
+    .nav-item.active {
+        background: #eaf5d8;
+        color: #27272a;
         font-weight: 600;
+    }
+    .nav-left {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+    .nav-pill {
+        font-size: 11px;
+        font-weight: 600;
+        padding: 1px 7px;
+        border-radius: 10px;
+        background: #e4e4e7;
+        color: #52525b;
+    }
+    .nav-pill-active {
+        background: #d9ecc1;
+        color: #365314;
+    }
+
+    .smart-dot-peach { width: 6px; height: 6px; border-radius: 50%; background: #f97316; }
+    .smart-dot-purple { width: 6px; height: 6px; border-radius: 50%; background: #a855f7; }
+    .smart-dot-green { width: 6px; height: 6px; border-radius: 50%; background: #10b981; }
+
+    /* Bottom Stash Device Card */
+    .stash-device-card {
+        background: #f0f3ea;
+        border: 1px solid #e1e7d5;
+        border-radius: 12px;
+        padding: 14px;
+        margin-top: 30px;
+        margin-bottom: 14px;
+    }
+    .stash-device-title {
+        font-size: 12px;
+        font-weight: 700;
+        color: #27272a;
+        margin-bottom: 4px;
+    }
+    .stash-device-text {
+        font-size: 11px;
+        color: #71717a;
+        line-height: 1.4;
+        margin-bottom: 8px;
+    }
+    .stash-device-status {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 11px;
+        font-weight: 600;
+        color: #15803d;
+    }
+
+    .settings-btn-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 8px 10px;
+        border-radius: 8px;
+        font-size: 13px;
+        color: #52525b;
+        cursor: pointer;
+        border-top: 1px solid #ebe9e1;
+        margin-top: 6px;
+    }
+    .settings-btn-row:hover {
+        background: #eeede8;
+        color: #18181b;
+    }
+
+    .profile-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 0;
+        margin-top: 10px;
+        border-top: 1px solid #ebe9e1;
+    }
+    .profile-avatar {
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        background: #fed7aa;
+        color: #9a3412;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 700;
+        font-size: 12px;
     }
 
     /* Workspace Greeting Header */
@@ -458,29 +598,86 @@ st.markdown("""
         color: #52525b;
     }
 
-    /* Custom Streamlit Tabs matching the breadcrumbs */
-    div[data-testid="stTabs"] {
-        background: transparent;
+    /* Dark Status Card (Photo 3) */
+    .dark-settings-card {
+        background: #09090b;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 16px;
+        padding: 20px;
         margin-bottom: 24px;
+        color: #ffffff;
     }
-    div[data-baseweb="tab-list"] {
-        gap: 8px;
-        border-bottom: 1px solid #ebe9e1 !important;
-        background-color: transparent !important;
+    .dark-status-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 12px 0;
     }
-    div[data-baseweb="tab"] {
-        font-size: 13px !important;
-        font-weight: 500 !important;
-        color: #71717a !important;
-        background: transparent !important;
-        border-radius: 8px 8px 0 0 !important;
-        padding: 8px 16px !important;
-        border: none !important;
+    .dark-status-row:not(:last-child) {
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
     }
-    div[data-baseweb="tab"][aria-selected="true"] {
-        color: #18181b !important;
-        font-weight: 700 !important;
-        border-bottom: 2px solid #18181b !important;
+    .dark-icon-box {
+        width: 40px;
+        height: 40px;
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 18px;
+    }
+    .dark-icon-green {
+        background: #e7f5e9;
+        color: #166534;
+    }
+    .dark-icon-white {
+        background: #f4f4f5;
+        color: #18181b;
+    }
+    .badge-pill-connected {
+        background: rgba(16, 185, 129, 0.15);
+        color: #10b981;
+        border: 1px solid rgba(16, 185, 129, 0.3);
+        font-size: 11px;
+        font-weight: 700;
+        padding: 4px 12px;
+        border-radius: 20px;
+    }
+    .badge-pill-ready {
+        background: rgba(16, 185, 129, 0.15);
+        color: #10b981;
+        border: 1px solid rgba(16, 185, 129, 0.3);
+        font-size: 11px;
+        font-weight: 700;
+        padding: 4px 12px;
+        border-radius: 20px;
+    }
+    .badge-pill-toggle {
+        background: #27272a;
+        color: #f4f4f5;
+        font-size: 11px;
+        font-weight: 700;
+        padding: 5px 14px;
+        border-radius: 20px;
+    }
+
+    /* Preferences List (Photo 1) */
+    .pref-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 14px 0;
+        border-bottom: 1px solid #ebe9e1;
+    }
+    .pref-label {
+        font-size: 14px;
+        color: #18181b;
+        font-weight: 500;
+    }
+    .pref-val {
+        font-size: 13px;
+        font-family: monospace;
+        color: #18181b;
+        font-weight: 600;
     }
 
     /* Concept Preview Footer */
@@ -508,11 +705,188 @@ hour = datetime.now().hour
 greeting_prefix = "Good morning" if hour < 12 else ("Good afternoon" if hour < 17 else "Good evening")
 today_formatted = datetime.now().strftime("%a, %b %d")
 
+# Initialize active view state
+if "active_view" not in st.session_state:
+    st.session_state.active_view = "Overview"
 
-# 4. Top Header & Action Row
+
+# 4. Settings Dialog matching Photos 1 & 3
+@st.dialog("Your preferences")
+def show_settings_modal():
+    screenshot_dir = app_cfg.get("screenshot_dir", str(config.detect_default_screenshot_dir()))
+    short_dir = "~/Pictures/Screenshots" if "Screenshots" in screenshot_dir else screenshot_dir
+    daemon_active = is_daemon_running()
+
+    # --- PHOTO 3: Dark Status Card ---
+    st.markdown(f"""
+    <div class="dark-settings-card">
+        <!-- Row 1: Screenshots folder -->
+        <div class="dark-status-row">
+            <div style="display: flex; align-items: center; gap: 14px;">
+                <div class="dark-icon-box dark-icon-green">📁</div>
+                <div>
+                    <div style="font-size: 14px; font-weight: 700; color: #f4f4f5;">Screenshots folder</div>
+                    <div style="font-size: 12px; color: #a1a1aa; font-family: monospace;">{short_dir}</div>
+                </div>
+            </div>
+            <span class="badge-pill-connected">Connected</span>
+        </div>
+
+        <!-- Row 2: On-device AI -->
+        <div class="dark-status-row">
+            <div style="display: flex; align-items: center; gap: 14px;">
+                <div class="dark-icon-box dark-icon-green">⚙️</div>
+                <div>
+                    <div style="font-size: 14px; font-weight: 700; color: #f4f4f5;">On-device AI</div>
+                    <div style="font-size: 12px; color: #a1a1aa;">Model ready • Processing locally</div>
+                </div>
+            </div>
+            <span class="badge-pill-ready">Ready</span>
+        </div>
+
+        <!-- Row 3: Background monitoring -->
+        <div class="dark-status-row">
+            <div style="display: flex; align-items: center; gap: 14px;">
+                <div class="dark-icon-box dark-icon-white">🖥️</div>
+                <div>
+                    <div style="font-size: 14px; font-weight: 700; color: #f4f4f5;">Background monitoring</div>
+                    <div style="font-size: 12px; color: #a1a1aa;">Automatically organize new screenshots</div>
+                </div>
+            </div>
+            <span class="badge-pill-toggle">{"Active" if daemon_active else "Paused / Active"}</span>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # --- PHOTO 1: Preferences Controls ---
+    st.markdown("""
+    <div style="font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #71717a; margin-bottom: 2px;">SCREENSTASH</div>
+    <div style="font-size: 20px; font-weight: 700; color: #18181b; margin-bottom: 4px;">Your preferences</div>
+    <div style="font-size: 12px; color: #71717a; margin-bottom: 16px;">These controls represent settings for the local-first desktop app.</div>
+    """, unsafe_allow_html=True)
+
+    # Watched screenshot folder row
+    col_w1, col_w2 = st.columns([6, 4])
+    with col_w1:
+        st.markdown("<div class='pref-label'>Watched screenshot folder</div>", unsafe_allow_html=True)
+    with col_w2:
+        st.markdown(f"<div style='text-align:right;' class='pref-val'>{short_dir}</div>", unsafe_allow_html=True)
+    st.markdown("<hr style='border:0; border-top:1px solid #ebe9e1; margin: 10px 0;'>", unsafe_allow_html=True)
+
+    # Process on this device
+    col_p1, col_p2 = st.columns([8, 2])
+    with col_p1:
+        st.markdown("<div class='pref-label'>Process on this device</div>", unsafe_allow_html=True)
+    with col_p2:
+        proc_device = st.checkbox("Process on this device", value=True, label_visibility="collapsed", key="chk_proc_dev")
+    st.markdown("<hr style='border:0; border-top:1px solid #ebe9e1; margin: 10px 0;'>", unsafe_allow_html=True)
+
+    # Notify for deadlines
+    col_n1, col_n2 = st.columns([8, 2])
+    with col_n1:
+        st.markdown("<div class='pref-label'>Notify for deadlines</div>", unsafe_allow_html=True)
+    with col_n2:
+        notify_deadlines = st.checkbox("Notify for deadlines", value=True, label_visibility="collapsed", key="chk_notify")
+    st.markdown("<hr style='border:0; border-top:1px solid #ebe9e1; margin: 10px 0;'>", unsafe_allow_html=True)
+
+    # Start at login
+    col_l1, col_l2 = st.columns([8, 2])
+    with col_l1:
+        st.markdown("<div class='pref-label'>Start at login</div>", unsafe_allow_html=True)
+    with col_l2:
+        start_login = st.checkbox("Start at login", value=False, label_visibility="collapsed", key="chk_login")
+    st.markdown("<hr style='border:0; border-top:1px solid #ebe9e1; margin: 10px 0;'>", unsafe_allow_html=True)
+
+    st.caption("Illustrative only: this website cannot access your screenshot folder or change OS preferences.")
+
+    col_btn_left, col_btn_right = st.columns([7, 3])
+    with col_btn_right:
+        if st.button("Done", type="primary", use_container_width=True):
+            st.rerun()
+
+
+# 5. Sidebar Navigation Matching Photo 2
+with st.sidebar:
+    st.markdown("""
+    <div class="sidebar-brand">
+        <div class="sidebar-logo-icon">📊</div>
+        <div class="sidebar-brand-name">screenstash</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown('<div class="sidebar-section-title">YOUR WORKSPACE</div>', unsafe_allow_html=True)
+
+    # Sidebar Navigation items
+    views = [
+        ("Overview", "📊", None),
+        ("Tasks", "☑", 4),
+        ("Calendar", "📅", 2),
+        ("References", "📁", None),
+        ("All screenshots", "🖼️", None)
+    ]
+
+    for name, icon, badge in views:
+        is_active = (st.session_state.active_view == name)
+        active_cls = "active" if is_active else ""
+        badge_html = f'<span class="nav-pill { "nav-pill-active" if is_active else "" }">{badge}</span>' if badge else ""
+        
+        # Streamlit button for each view styled cleanly
+        btn_label = f"{icon}  {name}"
+        if badge:
+            btn_label += f" ({badge})"
+            
+        if st.button(btn_label, key=f"nav_{name}", use_container_width=True, type="primary" if is_active else "secondary"):
+            st.session_state.active_view = name
+            st.rerun()
+
+    st.markdown('<div class="sidebar-section-title">SMART VIEWS</div>', unsafe_allow_html=True)
+
+    smart_views = [
+        ("Due soon", "smart-dot-peach", 2, "Tasks"),
+        ("Needs review", "smart-dot-purple", 2, "Overview"),
+        ("Confirmed", "smart-dot-green", 5, "All screenshots")
+    ]
+
+    for s_name, dot_cls, s_badge, target_view in smart_views:
+        if st.button(f"●  {s_name} ({s_badge})", key=f"smart_{s_name}", use_container_width=True):
+            st.session_state.active_view = target_view
+            st.rerun()
+
+    # Stash Device Status Card
+    daemon_status = is_daemon_running()
+    st.markdown(f"""
+    <div class="stash-device-card">
+        <div style="font-size: 16px; margin-bottom: 4px;">🌐</div>
+        <div class="stash-device-title">Your stash, on this device</div>
+        <div class="stash-device-text">Processing status is shown honestly. This demo uses sample content.</div>
+        <div class="stash-device-status">
+            <span class="smart-dot-green"></span>
+            <span>{"Live local mode" if daemon_status else "Demo mode"}</span>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Settings Button -> Triggers show_settings_modal
+    if st.button("⚙️  Settings  ↗", key="open_settings_btn", use_container_width=True):
+        show_settings_modal()
+
+    # User Profile Row
+    st.markdown(f"""
+    <div class="profile-row">
+        <div class="profile-avatar">{user_name[0]}</div>
+        <div style="flex-grow: 1;">
+            <div style="font-size: 12px; font-weight: 700; color: #18181b;">{user_name}'s workspace</div>
+            <div style="font-size: 10px; color: #71717a;">Personal stash</div>
+        </div>
+        <div style="color: #a1a1aa; font-size: 14px; cursor: pointer;">•••</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+
+# 6. Top Header & Action Row
 col_top_left, col_top_right = st.columns([6, 4])
 with col_top_left:
-    st.markdown('<div class="breadcrumb-text">Your workspace  /  <span class="breadcrumb-active">Personalized Memory</span></div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="breadcrumb-text">Your workspace  /  <span class="breadcrumb-active">{st.session_state.active_view}</span></div>', unsafe_allow_html=True)
 with col_top_right:
     col_search, col_add = st.columns([3, 1.8])
     with col_search:
@@ -528,7 +902,7 @@ with col_top_right:
                 process_screenshot(str(save_dest))
                 st.rerun()
 
-# 5. Greeting Subheading Banner
+# 7. Greeting Subheading Banner
 col_greet, col_today = st.columns([8, 2])
 with col_greet:
     st.markdown(f"""
@@ -558,9 +932,9 @@ with col_today:
     """, unsafe_allow_html=True)
 
 
-# 6. Live Auto-Updating Metric & View Fragment
+# 8. Live Auto-Updating Workspace View Fragment
 @st.fragment(run_every="4s")
-def render_workspace_content(search_term: str):
+def render_active_view(search_term: str):
     # Fetch database metrics
     stats = db.get_stats()
     all_recs = db.get_all_screenshots(search_query=search_term)
@@ -660,13 +1034,10 @@ def render_workspace_content(search_term: str):
     st.write("")
     st.write("")
 
-    # 7. Navigation Tabs matching Screenshots 1 to 5
-    tab_overview, tab_tasks, tab_calendar, tab_references, tab_all = st.tabs([
-        "Overview", "Tasks", "Calendar", "References", "All screenshots"
-    ])
+    current_view = st.session_state.active_view
 
-    # ---------------- TAB 1: OVERVIEW ----------------
-    with tab_overview:
+    # ---------------- VIEW 1: OVERVIEW ----------------
+    if current_view == "Overview":
         col_mid_left, col_mid_right = st.columns([1, 1])
 
         # Left Column: Deadline Calendar
@@ -907,8 +1278,8 @@ def render_workspace_content(search_term: str):
             </div>
             """, unsafe_allow_html=True)
 
-    # ---------------- TAB 2: TASKS ----------------
-    with tab_tasks:
+    # ---------------- VIEW 2: TASKS ----------------
+    elif current_view == "Tasks":
         st.markdown("""
         <div class="section-card">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
@@ -922,7 +1293,6 @@ def render_workspace_content(search_term: str):
             </div>
         """, unsafe_allow_html=True)
 
-        # Render tasks checklist
         task_items = [
             ("Submit project proposal", "Oct 24 • Due in 2 days", "assignment-brief.png", "Due date: October 24"),
             ("Send final presentation slides", "Oct 23 • Tomorrow", "team-chat.png", "Slides due tomorrow Friday"),
@@ -930,7 +1300,6 @@ def render_workspace_content(search_term: str):
             ("Read research paper", "Oct 29 • In 7 days", "paper-pdf.png", "Recommended reading for next sprint")
         ]
 
-        # Include any real tasks extracted by DB
         if all_tasks:
             for item in all_tasks[:4]:
                 task_items.insert(0, (item["task"], item["rec"].created_at[:10], item["rec"].file_name, item["rec"].summary[:50]))
@@ -938,7 +1307,7 @@ def render_workspace_content(search_term: str):
         for title, deadline, source, evidence in task_items:
             col_t_check, col_t_btn = st.columns([8, 2])
             with col_t_check:
-                st.checkbox(f"**{title}** — *{deadline}*", key=f"task_chk_{title}")
+                st.checkbox(f"**{title}** — *{deadline}*", key=f"task_chk_view_{title}")
             with col_t_btn:
                 with st.popover("View evidence ↗"):
                     st.caption(f"Source file: `{source}`")
@@ -946,8 +1315,8 @@ def render_workspace_content(search_term: str):
 
         st.markdown("</div>", unsafe_allow_html=True)
 
-    # ---------------- TAB 3: CALENDAR ----------------
-    with tab_calendar:
+    # ---------------- VIEW 3: CALENDAR ----------------
+    elif current_view == "Calendar":
         st.markdown("""
         <div class="section-card">
             <div class="section-tag">PLAN AHEAD</div>
@@ -1009,8 +1378,8 @@ def render_workspace_content(search_term: str):
         </div>
         """, unsafe_allow_html=True)
 
-    # ---------------- TAB 4: REFERENCES ----------------
-    with tab_references:
+    # ---------------- VIEW 4: REFERENCES ----------------
+    elif current_view == "References":
         st.markdown("""
         <div class="section-card">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
@@ -1063,8 +1432,8 @@ def render_workspace_content(search_term: str):
 
         st.markdown("</div>", unsafe_allow_html=True)
 
-    # ---------------- TAB 5: ALL SCREENSHOTS ----------------
-    with tab_all:
+    # ---------------- VIEW 5: ALL SCREENSHOTS ----------------
+    elif current_view == "All screenshots":
         st.markdown("""
         <div class="section-card">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
@@ -1078,7 +1447,6 @@ def render_workspace_content(search_term: str):
             </div>
         """, unsafe_allow_html=True)
 
-        # Show actual database screenshot records in grid
         cols_grid = st.columns(3)
         colors = ["#dcfce7", "#ffedd5", "#f3e8ff", "#fef3c7", "#eff6ff"]
         text_colors = ["#15803d", "#c2410c", "#7e22ce", "#b45309", "#1d4ed8"]
@@ -1124,7 +1492,7 @@ def render_workspace_content(search_term: str):
 
         st.markdown("</div>", unsafe_allow_html=True)
 
-    # 8. Concept Preview Footer
+    # 9. Concept Preview Footer
     st.markdown("""
     <div class="workspace-footer">
         <div><span style="color:#84cc16;">●</span> ScreenStash concept preview</div>
@@ -1134,5 +1502,5 @@ def render_workspace_content(search_term: str):
     """, unsafe_allow_html=True)
 
 
-# Render the live workspace
-render_workspace_content(search_query)
+# Render the active workspace view
+render_active_view(search_query)
