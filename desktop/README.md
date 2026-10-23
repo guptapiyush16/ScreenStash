@@ -17,8 +17,7 @@ The Rust bridge uses `SCREENSTASH_ROOT` to locate the repository and
 `SCREENSTASH_PYTHON` to select the Python executable. Set both when running a
 packaged build outside the repository. Pipeline commands are whitelisted.
 
-The current migration shell uses the existing Python pipeline through a local
-bridge. A production installer must package a Python runtime and the pipeline
-sidecar before distribution; the release workflow currently builds the Tauri
-shell and should be treated as a migration preview until that sidecar packaging
-step is completed.
+The release workflow packages the Python processing pipeline as
+`screenstash-sidecar.exe` and includes it in the Tauri installer. Ollama and
+Tesseract remain optional local dependencies: without them, ScreenStash uses
+the built-in fallback engine and reports the degraded status in the app.

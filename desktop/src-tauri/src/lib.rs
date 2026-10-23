@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::{env, fs, path::{Path, PathBuf}, process::Command};
+use tauri::Manager;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
@@ -12,6 +13,8 @@ pub struct AppConfig {
 pub struct RuntimeStatus { service_running: bool, python_available: bool, ollama_available: bool, watched_folder: String, app_data_dir: String }
 #[derive(Debug, Serialize)]
 pub struct DashboardStats { total: u32, tasks: u32, events: u32, receipts: u32 }
+#[derive(Debug, Serialize)]
+pub struct StashItem { title: String, category: String, summary: String, time: String, accent: String }
 fn app_data_dir() -> PathBuf { if let Some(local) = env::var_os("LOCALAPPDATA") { return PathBuf::from(local).join("ScreenStash"); } env::var_os("APPDATA").map(PathBuf::from).unwrap_or_else(|| PathBuf::from(".")).join("ScreenStash") }
 fn config_path() -> PathBuf { app_data_dir().join("config.json") }
 fn default_config() -> AppConfig {
@@ -41,9 +44,66 @@ fn get_dashboard_stats() -> DashboardStats {
                     receipts: categories.get("Receipt").and_then(|v| v.as_u64()).unwrap_or(0) as u32,
                 };
             }
+            #[tauri::command]
+            fn get_recent_items() -> Vec<StashItem> {
+                let script = "import database, json; database.init_db(); print(json.dumps([r.model_dump(mode='json') for r in database.get_all_screenshots()[:8]]))";
+                let output = Command::new(python_executable()).current_dir(project_root())
+                    .args(["-c", script]).output();
+                let Ok(output) = output else { return Vec::new(); };
+                if !output.status.success() { return Vec::new(); }
+                let Ok(values) = serde_json::from_slice::<Vec<serde_json::Value>>(&output.stdout) else {
+                    return Vec::new();
+                };
+                values.into_iter().map(|value| {
+                    let category = value.get("category").and_then(|v| v.as_str()).unwrap_or("Reference").to_string();
+                    let accent = match category.as_str() {
+                        "Task" => "peach",
+                        "Event" => "purple",
+                        "Receipt" => "green",
+                        _ => "lime",
+                    }.to_string();
+                    StashItem {
+                        title: value.get("title").and_then(|v| v.as_str()).unwrap_or("Untitled screenshot").to_string(),
+                        category,
+                        summary: value.get("summary").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                        time: value.get("created_at").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                        accent,
+                    }
+                }).collect()
+            }
         }
     }
     DashboardStats { total: 0, tasks: 0, events: 0, receipts: 0 }
 }
-#[tauri::command] fn run_pipeline_command(command: String) -> Result<String, String> { let allowed = ["start", "stop", "scan", "setup-ai"]; if !allowed.contains(&command.as_str()) { return Err("Unsupported pipeline command".into()); } let output = Command::new(python_executable()).current_dir(project_root()).args(["screenstash.py", &command]).output().map_err(|e| e.to_string())?; let stdout = String::from_utf8_lossy(&output.stdout).to_string(); if output.status.success() { Ok(stdout) } else { Err(String::from_utf8_lossy(&output.stderr).to_string()) } }
-pub fn run() { tauri::Builder::default().invoke_handler(tauri::generate_handler![get_config, save_config, get_runtime_status, get_dashboard_stats, run_pipeline_command]).setup(|app| { let _ = app.handle(); Ok(()) }).run(tauri::generate_context!()).expect("error while running ScreenStash"); }
+#[tauri::command]
+fn run_pipeline_command(app: tauri::AppHandle, command: String) -> Result<String, String> {
+    let allowed = ["start", "stop", "scan", "setup-ai"];
+    if !allowed.contains(&command.as_str()) {
+        return Err("Unsupported pipeline command".into());
+    }
+    let bundled_sidecar = app.path().resource_dir()
+        .ok()
+        .map(|dir| dir.join("screenstash-sidecar.exe"))
+        .filter(|path| path.exists());
+    let mut process = if let Some(sidecar) = bundled_sidecar {
+        let mut cmd = Command::new(sidecar);
+        cmd.arg(&command);
+        cmd
+    } else {
+        let mut cmd = Command::new(python_executable());
+        cmd.current_dir(project_root()).args(["screenstash.py", &command]);
+        cmd
+    };
+    if command == "start" {
+        process.spawn().map_err(|e| e.to_string())?;
+        return Ok("Background watcher started.".into());
+    }
+    let output = process.output().map_err(|e| e.to_string())?;
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    if output.status.success() {
+        Ok(stdout)
+    } else {
+        Err(String::from_utf8_lossy(&output.stderr).to_string())
+    }
+}
+pub fn run() { tauri::Builder::default().invoke_handler(tauri::generate_handler![get_config, save_config, get_runtime_status, get_dashboard_stats, get_recent_items, run_pipeline_command]).setup(|app| { let _ = app.handle(); Ok(()) }).run(tauri::generate_context!()).expect("error while running ScreenStash"); }

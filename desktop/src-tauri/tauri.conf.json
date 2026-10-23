@@ -9,5 +9,5 @@
     "security": {"csp": null},
     "trayIcon": {"iconPath": "icons/icon.png", "tooltip": "ScreenStash"}
   },
-  "bundle": {"active": true, "targets": "all", "category": "Productivity", "shortDescription": "Private screenshot intelligence", "longDescription": "Turn desktop screenshots into organized tasks, events, receipts, and references locally.", "resources": ["../../*.py", "../../requirements.txt"]}
+  "bundle": {"active": true, "targets": "all", "category": "Productivity", "shortDescription": "Private screenshot intelligence", "longDescription": "Turn desktop screenshots into organized tasks, events, receipts, and references locally.", "resources": ["screenstash-sidecar.exe"]}
 }
