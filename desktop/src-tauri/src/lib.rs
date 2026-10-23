@@ -44,36 +44,36 @@ fn get_dashboard_stats() -> DashboardStats {
                     receipts: categories.get("Receipt").and_then(|v| v.as_u64()).unwrap_or(0) as u32,
                 };
             }
-            #[tauri::command]
-            fn get_recent_items() -> Vec<StashItem> {
-                let script = "import database, json; database.init_db(); print(json.dumps([r.model_dump(mode='json') for r in database.get_all_screenshots()[:8]]))";
-                let output = Command::new(python_executable()).current_dir(project_root())
-                    .args(["-c", script]).output();
-                let Ok(output) = output else { return Vec::new(); };
-                if !output.status.success() { return Vec::new(); }
-                let Ok(values) = serde_json::from_slice::<Vec<serde_json::Value>>(&output.stdout) else {
-                    return Vec::new();
-                };
-                values.into_iter().map(|value| {
-                    let category = value.get("category").and_then(|v| v.as_str()).unwrap_or("Reference").to_string();
-                    let accent = match category.as_str() {
-                        "Task" => "peach",
-                        "Event" => "purple",
-                        "Receipt" => "green",
-                        _ => "lime",
-                    }.to_string();
-                    StashItem {
-                        title: value.get("title").and_then(|v| v.as_str()).unwrap_or("Untitled screenshot").to_string(),
-                        category,
-                        summary: value.get("summary").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                        time: value.get("created_at").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                        accent,
-                    }
-                }).collect()
-            }
         }
     }
     DashboardStats { total: 0, tasks: 0, events: 0, receipts: 0 }
+}
+#[tauri::command]
+fn get_recent_items() -> Vec<StashItem> {
+    let script = "import database, json; database.init_db(); print(json.dumps([r.model_dump(mode='json') for r in database.get_all_screenshots()[:8]]))";
+    let output = Command::new(python_executable()).current_dir(project_root())
+        .args(["-c", script]).output();
+    let Ok(output) = output else { return Vec::new(); };
+    if !output.status.success() { return Vec::new(); }
+    let Ok(values) = serde_json::from_slice::<Vec<serde_json::Value>>(&output.stdout) else {
+        return Vec::new();
+    };
+    values.into_iter().map(|value| {
+        let category = value.get("category").and_then(|v| v.as_str()).unwrap_or("Reference").to_string();
+        let accent = match category.as_str() {
+            "Task" => "peach",
+            "Event" => "purple",
+            "Receipt" => "green",
+            _ => "lime",
+        }.to_string();
+        StashItem {
+            title: value.get("title").and_then(|v| v.as_str()).unwrap_or("Untitled screenshot").to_string(),
+            category,
+            summary: value.get("summary").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+            time: value.get("created_at").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+            accent,
+        }
+    }).collect()
 }
 #[tauri::command]
 fn run_pipeline_command(app: tauri::AppHandle, command: String) -> Result<String, String> {
