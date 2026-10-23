@@ -95,18 +95,22 @@ def open_desktop_window(
                 "--app-id=ScreenStash"
             ]
             logger.info(f"Opening dashboard in standalone App Mode via {browser_bin[0]}...")
-            proc = subprocess.Popen(
-                cmd,
-                creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP if sys.platform == "win32" else 0,
-                close_fds=True
-            )
+            proc = subprocess.Popen(cmd)
+            proc.wait()
             return True
         except Exception as e:
             logger.warning(f"App Mode launch failed: {e}. Falling back to default browser.")
 
     # 3. Last-resort fallback: standard browser
     try:
+        print("\n[*] Opening ScreenStash in your default browser...")
         webbrowser.open(url)
+        print("[*] ScreenStash is active. Press Ctrl+C in this terminal when you want to close the dashboard.")
+        try:
+            while True:
+                time.sleep(1)
+        except (KeyboardInterrupt, SystemExit):
+            pass
         return True
     except Exception as e:
         logger.error(f"Failed to open dashboard: {e}")

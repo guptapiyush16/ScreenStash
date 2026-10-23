@@ -71,9 +71,10 @@ Choose either installation path:
 
 **Download path**
 
-1. Download `ScreenStash-Windows.zip` from the ScreenStash landing page.
-2. Extract the ZIP to a folder you control.
-3. Double-click `install.bat`.
+1. Download the Windows installer from the ScreenStash landing page.
+2. Run the installer and follow the onboarding steps.
+
+For source-based installation or development, download the repository ZIP instead.
 
 **CLI path**
 
@@ -87,7 +88,9 @@ python screenstash.py install
 
 The installer installs the Python dependencies and opens the local ScreenStash onboarding screen. It does not start monitoring or register login startup before the onboarding is completed.
 
-ScreenStash then opens a short onboarding screen that:
+The landing page's Windows button downloads the latest installer from GitHub Releases. The installer build is produced by `.github/workflows/desktop-release.yml`.
+
+For source-based installation, ScreenStash then opens a short onboarding screen that:
 - Installs dependencies from `requirements.txt`
 - Auto-detects your Windows screenshot folder (including OneDrive paths)
 - Explains that screenshots may contain private information
@@ -181,6 +184,16 @@ The test suite validates:
 ---
 
 ## 📖 Mandatory Reference Files
+
+## 🖥️ Tauri desktop migration
+
+The repository now includes a `desktop/` Tauri 2 + React + TypeScript + Vite
+application shell. It provides onboarding, the dashboard workspace, settings
+and local model setup screens while preserving the existing Python watcher,
+OCR/AI pipeline, and SQLite database as a local sidecar. See
+[`desktop/README.md`](desktop/README.md) for native development and packaging
+commands. The legacy Streamlit/Python launcher remains supported during the
+migration.
 
 - [Decisions.mc](file:///c:/PeassBeReasonable/Hacktoberfest/ScreenStash/Decisions.mc): Log of architectural decisions and concrete rationale.
 - [Flow.md](file:///c:/PeassBeReasonable/Hacktoberfest/ScreenStash/Flow.md): Module-by-module execution trace and architecture diagram.

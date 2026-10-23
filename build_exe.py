@@ -30,6 +30,9 @@ def build():
         "--windowed",           # Hide terminal window for GUI
         "--noconfirm",
         "--clean",
+        f"--icon={project_dir / 'app_icon.ico'}",
+        f"--add-data={project_dir / 'app_icon.ico'};.",
+        f"--add-data={project_dir / 'app_icon.png'};.",
         f"--add-data={project_dir / 'app.py'};.",
         f"--add-data={project_dir / 'background_service.py'};.",
         f"--add-data={project_dir / 'background.pyw'};.",

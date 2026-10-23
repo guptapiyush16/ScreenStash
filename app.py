@@ -29,9 +29,12 @@ import html
 from ai_engine import MODEL_CHOICES, model_is_available
 
 # 1. Page Configuration
+_icon_path = Path(__file__).parent / "app_icon.png"
+_page_icon = str(_icon_path) if _icon_path.exists() else "📸"
+
 st.set_page_config(
     page_title="ScreenStash — Your Workspace",
-    page_icon="📸",
+    page_icon=_page_icon,
     layout="wide",
     initial_sidebar_state="expanded"
 )

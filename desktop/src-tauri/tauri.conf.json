@@ -1,0 +1,13 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "ScreenStash",
+  "version": "0.1.0",
+  "identifier": "com.screenstash.desktop",
+  "build": {"beforeDevCommand": "npm run dev", "devUrl": "http://localhost:1420", "beforeBuildCommand": "npm run build", "frontendDist": "../dist"},
+  "app": {
+    "windows": [{"label": "main", "title": "ScreenStash", "width": 1200, "height": 800, "minWidth": 900, "minHeight": 620, "resizable": true}],
+    "security": {"csp": null},
+    "trayIcon": {"iconPath": "icons/icon.png", "tooltip": "ScreenStash"}
+  },
+  "bundle": {"active": true, "targets": "all", "category": "Productivity", "shortDescription": "Private screenshot intelligence", "longDescription": "Turn desktop screenshots into organized tasks, events, receipts, and references locally.", "resources": ["../../*.py", "../../requirements.txt"]}
+}

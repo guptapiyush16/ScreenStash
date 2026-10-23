@@ -14,6 +14,7 @@ import sys
 import shutil
 import subprocess
 from pathlib import Path
+from typing import Optional
 
 import config
 import database as db
@@ -37,8 +38,15 @@ def get_windows_startup_dir() -> Path:
     return Path.home()
 
 
-def create_windows_shortcut(target_path: str, arguments: str, shortcut_path: Path, description: str):
-    """Creates a Windows .lnk shortcut using PowerShell COM object."""
+def create_windows_shortcut(
+    target_path: str,
+    arguments: str,
+    shortcut_path: Path,
+    description: str,
+    icon_path: Optional[Path] = None
+):
+    """Creates a Windows .lnk shortcut with custom icon using PowerShell COM object."""
+    icon_statement = f"$Shortcut.IconLocation = '{str(icon_path.resolve())},0';" if icon_path and icon_path.exists() else ""
     ps_cmd = f"""
     $WshShell = New-Object -ComObject WScript.Shell;
     $Shortcut = $WshShell.CreateShortcut('{str(shortcut_path)}');
@@ -46,6 +54,7 @@ def create_windows_shortcut(target_path: str, arguments: str, shortcut_path: Pat
     $Shortcut.Arguments = '{arguments}';
     $Shortcut.WorkingDirectory = '{str(Path(__file__).parent.resolve())}';
     $Shortcut.Description = '{description}';
+    {icon_statement}
     $Shortcut.Save();
     """
     try:
@@ -53,6 +62,16 @@ def create_windows_shortcut(target_path: str, arguments: str, shortcut_path: Pat
         return True
     except Exception as e:
         return False
+
+
+def get_windows_programs_menu_dir() -> Path:
+    """Returns the Windows Start Menu Programs directory."""
+    appdata = os.getenv("APPDATA")
+    if appdata:
+        programs_dir = Path(appdata) / "Microsoft" / "Windows" / "Start Menu" / "Programs"
+        programs_dir.mkdir(parents=True, exist_ok=True)
+        return programs_dir
+    return Path.home()
 
 
 def run_setup(auto_start: bool = True, start_at_login: bool = False):
@@ -73,11 +92,13 @@ def run_setup(auto_start: bool = True, start_at_login: bool = False):
     print(f"[✓] Database Path     : {config.DATABASE_PATH}")
     print(f"[✓] Screenshot Folder : {screenshot_dir}")
 
-    # 3. Create a desktop shortcut. Login startup is opt-in.
+    # 3. Create Windows Shortcuts (Desktop, Start Menu, Startup)
     if sys.platform == "win32":
         project_dir = Path(__file__).parent.resolve()
         desktop_dir = Path.home() / "Desktop"
         startup_dir = get_windows_startup_dir()
+        programs_dir = get_windows_programs_menu_dir()
+        app_icon = project_dir / "app_icon.ico"
 
         python_exe = sys.executable
         # Locate pythonw.exe in same directory as python.exe for windowless execution
@@ -87,7 +108,7 @@ def run_setup(auto_start: bool = True, start_at_login: bool = False):
         background_script = str(project_dir / "background.pyw")
         run_desktop_script = str(project_dir / "run_desktop.py")
 
-        # 3a. Desktop Shortcut for Native Desktop App
+        # 3a. Desktop Shortcut with custom icon
         desktop_shortcut = desktop_dir / "ScreenStash.lnk"
         old_shortcut = desktop_dir / "ScreenStash Dashboard.lnk"
         if old_shortcut.exists():
@@ -99,9 +120,21 @@ def run_setup(auto_start: bool = True, start_at_login: bool = False):
             target_path=python_exe,
             arguments=f'"{run_desktop_script}"',
             shortcut_path=desktop_shortcut,
-            description="Open ScreenStash Desktop App"
+            description="Open ScreenStash Desktop App",
+            icon_path=app_icon
         )
-        print(f"[✓] Created Desktop shortcut: {desktop_shortcut.name}")
+        print(f"[✓] Created Desktop shortcut with icon: {desktop_shortcut.name}")
+
+        # 3b. Start Menu Shortcut (like Notion / Slack)
+        start_menu_shortcut = programs_dir / "ScreenStash.lnk"
+        create_windows_shortcut(
+            target_path=python_exe,
+            arguments=f'"{run_desktop_script}"',
+            shortcut_path=start_menu_shortcut,
+            description="ScreenStash — Screenshot-to-Plan Desktop App",
+            icon_path=app_icon
+        )
+        print(f"[✓] Created Start Menu shortcut with icon: {start_menu_shortcut.name}")
 
         if start_at_login:
             startup_shortcut = startup_dir / "ScreenStash Background Service.lnk"
@@ -109,7 +142,8 @@ def run_setup(auto_start: bool = True, start_at_login: bool = False):
                 target_path=pythonw_exe,
                 arguments=f'"{background_script}"',
                 shortcut_path=startup_shortcut,
-                description="ScreenStash Background Screenshot Monitor"
+                description="ScreenStash Background Screenshot Monitor",
+                icon_path=app_icon
             )
             print("[✓] Registered in Windows Startup (user consented)")
 

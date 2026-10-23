@@ -14,3 +14,9 @@ __pycache__/
 venv/
 .venv/
 env/
+
+# Tauri/React desktop build output
+desktop/node_modules/
+desktop/dist/
+desktop/src-tauri/target/
+desktop/src-tauri/gen/
