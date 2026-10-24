@@ -81,9 +81,10 @@ fn run_pipeline_command(app: tauri::AppHandle, command: String) -> Result<String
     if !allowed.contains(&command.as_str()) {
         return Err("Unsupported pipeline command".into());
     }
+    let sidecar_name = if cfg!(windows) { "screenstash-sidecar.exe" } else { "screenstash-sidecar" };
     let bundled_sidecar = app.path().resource_dir()
         .ok()
-        .map(|dir| dir.join("screenstash-sidecar.exe"))
+        .map(|dir| dir.join(sidecar_name))
         .filter(|path| path.exists());
     let mut process = if let Some(sidecar) = bundled_sidecar {
         let mut cmd = Command::new(sidecar);

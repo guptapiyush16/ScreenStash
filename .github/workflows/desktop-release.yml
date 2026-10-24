@@ -43,6 +43,7 @@ jobs:
             --workpath desktop/.pyinstaller `
             --specpath desktop/.pyinstaller `
             desktop_sidecar.py
+          copy desktop\src-tauri\screenstash-sidecar.exe desktop\src-tauri\screenstash-sidecar
 
       - name: Build Tauri installer
         uses: tauri-apps/tauri-action@v0
@@ -53,7 +54,57 @@ jobs:
           tagName: v__VERSION__
           releaseName: ScreenStash v__VERSION__
           releaseBody: |
-            Download the ScreenStash Windows installer below.
+            Download ScreenStash for Windows (.exe) and macOS (.dmg) below.
+
+            ScreenStash processes screenshots locally. Ollama and Gemma are optional and can be configured after installation.
+          releaseDraft: false
+          prerelease: false
+
+  macos:
+    name: macOS desktop installer
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Install Python sidecar dependencies
+        working-directory: ${{ github.workspace }}
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install -r requirements.txt pyinstaller
+
+      - name: Build packaged Python sidecar
+        working-directory: ${{ github.workspace }}
+        run: |
+          pyinstaller --onefile --windowed --clean --noconfirm \
+            --name screenstash-sidecar \
+            --distpath desktop/src-tauri \
+            --workpath desktop/.pyinstaller \
+            --specpath desktop/.pyinstaller \
+            desktop_sidecar.py
+          cp desktop/src-tauri/screenstash-sidecar desktop/src-tauri/screenstash-sidecar.exe
+
+      - name: Build Tauri installer
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: desktop
+          tagName: v__VERSION__
+          releaseName: ScreenStash v__VERSION__
+          releaseBody: |
+            Download ScreenStash for Windows (.exe) and macOS (.dmg) below.
 
             ScreenStash processes screenshots locally. Ollama and Gemma are optional and can be configured after installation.
           releaseDraft: false
