@@ -123,6 +123,10 @@ def load_config() -> Dict[str, Any]:
             # Merge with defaults for any missing keys
             config = DEFAULT_CONFIG.copy()
             config.update(saved)
+            # Upgrade older installations that stored an empty endpoint before
+            # the official Cloud API URL became a built-in setting.
+            if not config.get("cloud_api_url"):
+                config["cloud_api_url"] = DEFAULT_CLOUD_API_URL
             return config
     except Exception as e:
         logging.error(f"Error loading config from {CONFIG_FILE_PATH}: {e}")
