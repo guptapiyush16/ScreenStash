@@ -10,7 +10,12 @@ pub struct AppConfig {
     pub tesseract_cmd: String, pub auto_process_new_screenshots: bool,
     pub enable_fallback_heuristic_ai: bool, pub theme: String, pub onboarding_complete: bool,
     pub process_locally: bool, pub start_at_login: bool, pub notify_on_results: bool,
+    #[serde(default = "default_ai_provider")] pub ai_provider: String,
+    #[serde(default)] pub cloud_api_url: String,
+    #[serde(default)] pub cloud_consent: bool,
+    #[serde(default)] pub cloud_installation_id: String,
 }
+fn default_ai_provider() -> String { "offline".into() }
 #[derive(Debug, Serialize)]
 pub struct RuntimeStatus { service_running: bool, python_available: bool, ollama_available: bool, model_ready: bool, watched_folder: String, app_data_dir: String }
 #[derive(Debug, Serialize)]
@@ -31,7 +36,7 @@ fn database_path() -> PathBuf { app_data_dir().join("screenstash.db") }
 fn default_config() -> AppConfig {
     let home = env::var_os("USERPROFILE").or_else(|| env::var_os("HOME")).map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."));
     let screenshot_dir = home.join("Pictures").join("Screenshots");
-    AppConfig { screenshot_dir: screenshot_dir.display().to_string(), ollama_url: "http://localhost:11434".into(), ollama_model: "gemma3:4b".into(), tesseract_cmd: "tesseract".into(), auto_process_new_screenshots: true, enable_fallback_heuristic_ai: true, theme: "light".into(), onboarding_complete: false, process_locally: true, start_at_login: false, notify_on_results: true }
+    AppConfig { screenshot_dir: screenshot_dir.display().to_string(), ollama_url: "http://localhost:11434".into(), ollama_model: "gemma3:4b".into(), tesseract_cmd: "tesseract".into(), auto_process_new_screenshots: true, enable_fallback_heuristic_ai: true, theme: "light".into(), onboarding_complete: false, process_locally: true, start_at_login: false, notify_on_results: true, ai_provider: default_ai_provider(), cloud_api_url: String::new(), cloud_consent: false, cloud_installation_id: String::new() }
 }
 fn read_config() -> AppConfig { fs::read_to_string(config_path()).ok().and_then(|text| serde_json::from_str(&text).ok()).unwrap_or_else(default_config) }
 fn python_executable() -> String { env::var("SCREENSTASH_PYTHON").unwrap_or_else(|_| if cfg!(windows) { "python".into() } else { "python3".into() }) }
@@ -41,6 +46,11 @@ fn validate_config(config: &AppConfig) -> Result<(), String> {
     let url = Url::parse(&config.ollama_url).map_err(|_| "Ollama endpoint must be a valid URL".to_string())?;
     if url.scheme() != "http" || !matches!(url.host_str(), Some("localhost") | Some("127.0.0.1") | Some("::1")) {
         return Err("Only a local Ollama endpoint is supported. Remote endpoints can expose screenshot text.".into());
+    }
+    if !matches!(config.ai_provider.as_str(), "offline" | "ollama" | "gemini") { return Err("Unsupported AI provider".into()); }
+    if config.ai_provider == "gemini" {
+        let cloud = Url::parse(&config.cloud_api_url).map_err(|_| "Cloud AI requires a valid HTTPS API URL".to_string())?;
+        if cloud.scheme() != "https" || !config.cloud_consent { return Err("Cloud AI requires an HTTPS URL and explicit consent to upload screenshots".into()); }
     }
     Ok(())
 }

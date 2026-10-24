@@ -1,6 +1,7 @@
 fastapi==0.116.1
 google-genai==1.32.0
 gunicorn==23.0.0
+python-multipart==0.0.20
 psycopg[binary]==3.2.9
 sqlalchemy==2.0.43
 uvicorn[standard]==0.35.0

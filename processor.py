@@ -15,6 +15,9 @@ import json
 import hashlib
 import logging
 import threading
+import mimetypes
+import uuid
+from urllib.parse import urlparse
 from pathlib import Path
 from typing import Optional, Dict, Any, List, Tuple
 from PIL import Image
@@ -160,6 +163,51 @@ def call_ollama_ai(ocr_text: str, file_name: str, config: Dict[str, Any]) -> Opt
         logger.debug(f"Ollama call failed or timed out: {e}")
 
     return None
+
+
+def call_gemini_cloud_ai(file_path: Path, config: Dict[str, Any]) -> Optional[ExtractionResult]:
+    """Upload one screenshot to the consented ScreenStash cloud API; never persist it locally there."""
+    api_url = str(config.get("cloud_api_url", "")).rstrip("/")
+    parsed_url = urlparse(api_url)
+    if not config.get("cloud_consent") or parsed_url.scheme != "https" or not parsed_url.netloc:
+        logger.warning("Cloud AI was selected without valid HTTPS endpoint and consent")
+        return None
+    if file_path.stat().st_size > 10 * 1024 * 1024:
+        logger.warning("Skipping cloud extraction for oversized screenshot")
+        return None
+    installation_id = config.get("cloud_installation_id")
+    try:
+        uuid.UUID(str(installation_id))
+    except (ValueError, TypeError):
+        installation_id = str(uuid.uuid4())
+        config["cloud_installation_id"] = installation_id
+        from config import save_config
+        save_config(config)
+    mime_type = mimetypes.guess_type(file_path.name)[0] or "application/octet-stream"
+    if mime_type not in {"image/png", "image/jpeg", "image/webp", "image/bmp"}:
+        return None
+    try:
+        with file_path.open("rb") as image:
+            response = requests.post(
+                f"{api_url}/v1/extractions",
+                headers={"X-Installation-ID": str(installation_id)},
+                files={"image": (file_path.name, image, mime_type)},
+                timeout=60,
+            )
+        if response.status_code != 200:
+            logger.warning("Cloud extraction unavailable (HTTP %s); using offline fallback", response.status_code)
+            return None
+        parsed = response.json()
+        category = next((cat for cat in Category if cat.value.lower() == str(parsed.get("category", "")).lower()), Category.REFERENCE)
+        return ExtractionResult(
+            title=str(parsed.get("title") or file_path.name), category=category,
+            summary=str(parsed.get("summary") or ""), dates=list(parsed.get("dates") or []),
+            tasks=list(parsed.get("tasks") or []), amount=parsed.get("amount"),
+            tags=list(parsed.get("tags") or []), raw_ocr_text="", confidence_score=0.9,
+        )
+    except (requests.RequestException, ValueError, TypeError) as exc:
+        logger.warning("Cloud extraction failed; using offline fallback: %s", exc)
+        return None
 
 
 def fallback_heuristic_ai(ocr_text: str, file_name: str) -> ExtractionResult:
@@ -336,13 +384,18 @@ def _execute_processing(file_path: Path) -> Optional[ScreenshotRecord]:
             duration_ms=3000
         )
 
-        raw_ocr, ocr_ok = run_ocr(file_path, app_config.get("tesseract_cmd"))
         extraction: Optional[ExtractionResult] = None
-        if raw_ocr.strip() and app_config.get("process_locally", True):
+        raw_ocr = ""
+        ocr_ok = False
+        if app_config.get("ai_provider") == "gemini":
+            extraction = call_gemini_cloud_ai(file_path, app_config)
+        if not extraction:
+            raw_ocr, ocr_ok = run_ocr(file_path, app_config.get("tesseract_cmd"))
+        if not extraction and app_config.get("ai_provider") == "ollama" and raw_ocr.strip():
             extraction = call_ollama_ai(raw_ocr, file_name, app_config)
         if not extraction:
             extraction = fallback_heuristic_ai(raw_ocr, file_name)
-        if not ocr_ok:
+        if not ocr_ok and app_config.get("ai_provider") != "gemini":
             extraction.confidence_score = min(extraction.confidence_score, 0.4)
 
         db.update_extraction_result(record_id, extraction)

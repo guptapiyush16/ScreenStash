@@ -1,8 +1,8 @@
 # ScreenStash Cloud API
 
 This Render Web Service provides optional Gemini extraction for the desktop app.
-It receives OCR text and a filename, never the screenshot image, and does not
-write either to the quota database or application logs.
+It receives a screenshot image for Gemini vision analysis and does not write it
+to the quota database or application logs. Images are limited to 10 MB.
 
 ## Deploy on Render
 
