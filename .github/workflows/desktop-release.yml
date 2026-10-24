@@ -81,8 +81,8 @@ jobs:
       - name: Install Python sidecar dependencies
         working-directory: ${{ github.workspace }}
         run: |
-          python3 -m pip install --upgrade pip
-          python3 -m pip install -r requirements.txt pyinstaller
+          python3 -m pip install --break-system-packages --upgrade pip
+          python3 -m pip install --break-system-packages -r requirements.txt pyinstaller
 
       - name: Build packaged Python sidecar
         working-directory: ${{ github.workspace }}
