@@ -17,4 +17,4 @@ services:
           property: connectionString
 databases:
   - name: screenstash-quota
-    plan: basic-256mb
+    plan: free
