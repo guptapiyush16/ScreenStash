@@ -36,7 +36,7 @@ fn database_path() -> PathBuf { app_data_dir().join("screenstash.db") }
 fn default_config() -> AppConfig {
     let home = env::var_os("USERPROFILE").or_else(|| env::var_os("HOME")).map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."));
     let screenshot_dir = home.join("Pictures").join("Screenshots");
-    AppConfig { screenshot_dir: screenshot_dir.display().to_string(), ollama_url: "http://localhost:11434".into(), ollama_model: "gemma3:4b".into(), tesseract_cmd: "tesseract".into(), auto_process_new_screenshots: true, enable_fallback_heuristic_ai: true, theme: "light".into(), onboarding_complete: false, process_locally: true, start_at_login: false, notify_on_results: true, ai_provider: default_ai_provider(), cloud_api_url: String::new(), cloud_consent: false, cloud_installation_id: String::new() }
+    AppConfig { screenshot_dir: screenshot_dir.display().to_string(), ollama_url: "http://localhost:11434".into(), ollama_model: "gemma3:4b".into(), tesseract_cmd: "tesseract".into(), auto_process_new_screenshots: true, enable_fallback_heuristic_ai: true, theme: "light".into(), onboarding_complete: false, process_locally: true, start_at_login: false, notify_on_results: true, ai_provider: default_ai_provider(), cloud_api_url: "https://screenstash-cloudapi.onrender.com".into(), cloud_consent: false, cloud_installation_id: String::new() }
 }
 fn read_config() -> AppConfig { fs::read_to_string(config_path()).ok().and_then(|text| serde_json::from_str(&text).ok()).unwrap_or_else(default_config) }
 fn python_executable() -> String { env::var("SCREENSTASH_PYTHON").unwrap_or_else(|_| if cfg!(windows) { "python".into() } else { "python3".into() }) }

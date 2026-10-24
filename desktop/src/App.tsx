@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { getConfig, getDashboardStats, getRecentItems, getRuntimeStatus, runPipelineCommand, saveConfig } from "./api";
 import type { AppConfig, DashboardStats, RuntimeStatus, StashItem } from "./types";
 
-const defaultConfig: AppConfig = { screenshot_dir: "Detecting your Screenshots folder…", ollama_url: "http://localhost:11434", ollama_model: "gemma3:4b", tesseract_cmd: "tesseract", auto_process_new_screenshots: true, enable_fallback_heuristic_ai: true, theme: "light", onboarding_complete: false, process_locally: true, start_at_login: false, notify_on_results: true, ai_provider: "offline", cloud_api_url: "", cloud_consent: false, cloud_installation_id: "" };
+const defaultConfig: AppConfig = { screenshot_dir: "Detecting your Screenshots folder…", ollama_url: "http://localhost:11434", ollama_model: "gemma3:4b", tesseract_cmd: "tesseract", auto_process_new_screenshots: true, enable_fallback_heuristic_ai: true, theme: "light", onboarding_complete: false, process_locally: true, start_at_login: false, notify_on_results: true, ai_provider: "offline", cloud_api_url: "https://screenstash-cloudapi.onrender.com", cloud_consent: false, cloud_installation_id: "" };
 const emptyStats: DashboardStats = { total: 0, tasks: 0, events: 0, receipts: 0 };
 
 function App() {

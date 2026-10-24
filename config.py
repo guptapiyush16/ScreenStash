@@ -94,7 +94,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "ollama_url": "http://localhost:11434",
     "ollama_model": "gemma3:4b",
     "ai_provider": "offline",
-    "cloud_api_url": "",
+    "cloud_api_url": "https://screenstash-cloudapi.onrender.com",
     "cloud_consent": False,
     "cloud_installation_id": "",
     "tesseract_cmd": r"C:\Program Files\Tesseract-OCR\tesseract.exe" if sys.platform == "win32" else "tesseract",
