@@ -13,11 +13,11 @@ npm run build
 npm run tauri:build
 ```
 
-The Rust bridge uses `SCREENSTASH_ROOT` to locate the repository and
-`SCREENSTASH_PYTHON` to select the Python executable. Set both when running a
-packaged build outside the repository. Pipeline commands are whitelisted.
+The Rust bridge reads the shared local SQLite database directly, so released
+applications do not require a system Python installation or a source checkout.
+The Python sidecar is used only for the watcher, OCR, and local-model commands.
 
 The release workflow packages the Python processing pipeline as
-`screenstash-sidecar.exe` and includes it in the Tauri installer. Ollama and
+`screenstash-sidecar` and includes it in the Tauri installer. Ollama and
 Tesseract remain optional local dependencies: without them, ScreenStash uses
 the built-in fallback engine and reports the degraded status in the app.

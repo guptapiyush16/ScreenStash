@@ -3,7 +3,8 @@
 import sys
 
 from background_service import BackgroundDaemon, stop_running_daemon
-from screenstash import setup_ai
+from ai_engine import MODEL_CHOICES, pull_model
+from config import load_config
 from watcher import scan_existing_screenshots
 
 
@@ -18,8 +19,11 @@ def main() -> int:
         print(f"Processed {scan_existing_screenshots()} screenshot(s).")
         return 0
     if command == "setup-ai":
-        setup_ai()
-        return 0
+        model = load_config().get("ollama_model", "gemma3:4b")
+        if model not in MODEL_CHOICES.values():
+            print(f"Unsupported model: {model}", file=sys.stderr)
+            return 2
+        return pull_model(model)
     print(f"Unsupported sidecar command: {command}", file=sys.stderr)
     return 2
 

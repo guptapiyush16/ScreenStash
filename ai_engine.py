@@ -4,6 +4,7 @@ import json
 import logging
 import subprocess
 from typing import Any, Dict, Optional
+from urllib.parse import urlparse
 
 import requests
 
@@ -16,8 +17,20 @@ MODEL_CHOICES = {
 }
 
 
+def is_local_ollama_url(ollama_url: str) -> bool:
+    """Only permit the loopback Ollama service; OCR text must not be sent remotely."""
+    try:
+        parsed = urlparse(ollama_url)
+        return parsed.scheme == "http" and parsed.hostname in {"localhost", "127.0.0.1", "::1"}
+    except ValueError:
+        return False
+
+
 def ollama_models(ollama_url: str) -> Optional[list[str]]:
     """Return installed Ollama model names, or None when Ollama is unavailable."""
+    if not is_local_ollama_url(ollama_url):
+        logger.warning("Ignoring non-local Ollama endpoint")
+        return None
     try:
         response = requests.get(f"{ollama_url.rstrip('/')}/api/tags", timeout=3)
         response.raise_for_status()

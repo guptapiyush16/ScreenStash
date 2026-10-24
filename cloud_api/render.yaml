@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: screenstash-cloud-api
+    runtime: python
+    rootDir: cloud_api
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn -k uvicorn.workers.UvicornWorker -w 2 main:app
+    healthCheckPath: /health
+    envVars:
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-2.5-flash-lite
+      - key: DATABASE_URL
+        fromDatabase:
+          name: screenstash-quota
+          property: connectionString
+databases:
+  - name: screenstash-quota
+    plan: basic-256mb

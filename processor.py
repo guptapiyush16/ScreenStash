@@ -23,6 +23,7 @@ import requests
 import pytesseract
 
 from config import load_config
+from ai_engine import is_local_ollama_url
 from models import ExtractionResult, Category, ProcessStatus, ScreenshotRecord
 import database as db
 from notifier import show_saved_toast
@@ -97,6 +98,9 @@ def call_ollama_ai(ocr_text: str, file_name: str, config: Dict[str, Any]) -> Opt
     """
     ollama_url = config.get("ollama_url", "http://localhost:11434").rstrip("/")
     ollama_model = config.get("ollama_model", "gemma3:4b")
+    if not is_local_ollama_url(ollama_url):
+        logger.warning("Refusing non-local Ollama endpoint to protect screenshot privacy")
+        return None
 
     system_prompt = (
         "You are an AI assistant that analyzes screenshots and OCR text. "

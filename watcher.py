@@ -33,6 +33,8 @@ class ScreenshotEventHandler(FileSystemEventHandler):
 
     def _should_handle(self, file_path_str: str) -> bool:
         """Debounce and check if file has a valid screenshot extension."""
+        if not load_config().get("auto_process_new_screenshots", True):
+            return False
         path = Path(file_path_str)
         if path.suffix.lower() not in SUPPORTED_EXTENSIONS:
             return False

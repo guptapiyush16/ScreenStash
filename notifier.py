@@ -11,7 +11,6 @@ import sys
 import time
 import logging
 import subprocess
-import webbrowser
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -53,7 +52,7 @@ def render_standalone_popup(
     message: str = "AI is organizing your screenshot...",
     category: str = "Info",
     duration_ms: int = 3500,
-    dashboard_url: str = "http://localhost:8501"
+    dashboard_url: str = ""
 ):
     """
     Fallback: renders a borderless, top-most, dark-mode toast card directly using Tkinter.
@@ -121,7 +120,7 @@ def render_standalone_popup(
 
         lbl_action = tk.Label(
             inner_frame,
-            text="Click to view dashboard ↗",
+            text="ScreenStash is processing locally",
             font=("Segoe UI", 8, "italic"),
             fg=text_muted,
             bg=bg_color,
@@ -130,15 +129,6 @@ def render_standalone_popup(
         lbl_action.pack(anchor="e")
 
         def on_click(event=None):
-            try:
-                run_desktop_path = str(Path(__file__).parent / "run_desktop.py")
-                flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP if sys.platform == "win32" else 0
-                subprocess.Popen([sys.executable, run_desktop_path], creationflags=flags, close_fds=True)
-            except Exception:
-                try:
-                    webbrowser.open(dashboard_url)
-                except Exception:
-                    pass
             try:
                 root.destroy()
             except Exception:
@@ -176,7 +166,7 @@ def show_saved_toast(
     message: str = "AI is organizing your screenshot...",
     category: str = "Info",
     duration_ms: int = 3500,
-    dashboard_url: str = "http://localhost:8501"
+    dashboard_url: str = ""
 ):
     """
     Main entrypoint:
@@ -211,6 +201,6 @@ if __name__ == "__main__":
     p_msg = args[1] if len(args) > 1 else "AI is organizing your screenshot..."
     p_cat = args[2] if len(args) > 2 else "Info"
     p_dur = int(args[3]) if len(args) > 3 else 3500
-    p_url = args[4] if len(args) > 4 else "http://localhost:8501"
+    p_url = args[4] if len(args) > 4 else ""
 
     render_standalone_popup(p_title, p_msg, p_cat, p_dur, p_url)

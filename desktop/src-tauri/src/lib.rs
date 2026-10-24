@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
+use rusqlite::Connection;
 use std::{env, fs, path::{Path, PathBuf}, process::Command};
 use tauri::Manager;
+use url::Url;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
@@ -10,13 +12,22 @@ pub struct AppConfig {
     pub process_locally: bool, pub start_at_login: bool, pub notify_on_results: bool,
 }
 #[derive(Debug, Serialize)]
-pub struct RuntimeStatus { service_running: bool, python_available: bool, ollama_available: bool, watched_folder: String, app_data_dir: String }
+pub struct RuntimeStatus { service_running: bool, python_available: bool, ollama_available: bool, model_ready: bool, watched_folder: String, app_data_dir: String }
 #[derive(Debug, Serialize)]
 pub struct DashboardStats { total: u32, tasks: u32, events: u32, receipts: u32 }
 #[derive(Debug, Serialize)]
 pub struct StashItem { title: String, category: String, summary: String, time: String, accent: String }
-fn app_data_dir() -> PathBuf { if let Some(local) = env::var_os("LOCALAPPDATA") { return PathBuf::from(local).join("ScreenStash"); } env::var_os("APPDATA").map(PathBuf::from).unwrap_or_else(|| PathBuf::from(".")).join("ScreenStash") }
+fn app_data_dir() -> PathBuf {
+    if cfg!(target_os = "windows") {
+        return env::var_os("LOCALAPPDATA").or_else(|| env::var_os("APPDATA"))
+            .map(PathBuf::from).unwrap_or_else(|| PathBuf::from(".")).join("ScreenStash");
+    }
+    let home = env::var_os("HOME").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."));
+    if cfg!(target_os = "macos") { home.join("Library").join("Application Support").join("ScreenStash") }
+    else { env::var_os("XDG_DATA_HOME").map(PathBuf::from).unwrap_or_else(|| home.join(".local").join("share")).join("ScreenStash") }
+}
 fn config_path() -> PathBuf { app_data_dir().join("config.json") }
+fn database_path() -> PathBuf { app_data_dir().join("screenstash.db") }
 fn default_config() -> AppConfig {
     let home = env::var_os("USERPROFILE").or_else(|| env::var_os("HOME")).map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."));
     let screenshot_dir = home.join("Pictures").join("Screenshots");
@@ -26,53 +37,59 @@ fn read_config() -> AppConfig { fs::read_to_string(config_path()).ok().and_then(
 fn python_executable() -> String { env::var("SCREENSTASH_PYTHON").unwrap_or_else(|_| if cfg!(windows) { "python".into() } else { "python3".into() }) }
 fn project_root() -> PathBuf { env::var("SCREENSTASH_ROOT").map(PathBuf::from).unwrap_or_else(|_| Path::new(env!("CARGO_MANIFEST_DIR")).join("../../").to_path_buf()) }
 #[tauri::command] fn get_config() -> AppConfig { read_config() }
-#[tauri::command] fn save_config(config: AppConfig) -> Result<(), String> { let path = config_path(); fs::create_dir_all(path.parent().unwrap_or(Path::new("."))).map_err(|e| e.to_string())?; fs::write(path, serde_json::to_string_pretty(&config).map_err(|e| e.to_string())?).map_err(|e| e.to_string()) }
-#[tauri::command] fn get_runtime_status() -> RuntimeStatus { let config = read_config(); RuntimeStatus { service_running: false, python_available: Command::new(python_executable()).arg("--version").output().is_ok(), ollama_available: Command::new("ollama").arg("--version").output().is_ok(), watched_folder: config.screenshot_dir, app_data_dir: app_data_dir().display().to_string() } }
+fn validate_config(config: &AppConfig) -> Result<(), String> {
+    let url = Url::parse(&config.ollama_url).map_err(|_| "Ollama endpoint must be a valid URL".to_string())?;
+    if url.scheme() != "http" || !matches!(url.host_str(), Some("localhost") | Some("127.0.0.1") | Some("::1")) {
+        return Err("Only a local Ollama endpoint is supported. Remote endpoints can expose screenshot text.".into());
+    }
+    Ok(())
+}
+#[tauri::command] fn save_config(config: AppConfig) -> Result<(), String> { validate_config(&config)?; let path = config_path(); fs::create_dir_all(path.parent().unwrap_or(Path::new("."))).map_err(|e| e.to_string())?; fs::write(path, serde_json::to_string_pretty(&config).map_err(|e| e.to_string())?).map_err(|e| e.to_string()) }
+#[tauri::command]
+fn get_runtime_status() -> RuntimeStatus {
+    let config = read_config();
+    let pid_file = app_data_dir().join("screenstash_daemon.pid");
+    let service_running = pid_file.exists();
+    let ollama_available = Command::new("ollama").arg("--version").output().is_ok();
+    let model_ready = if ollama_available {
+        if let Ok(output) = Command::new("ollama").arg("list").output() {
+            let text = String::from_utf8_lossy(&output.stdout);
+            text.contains(&config.ollama_model) || (config.ollama_model.contains("gemma3") && text.contains("gemma3"))
+        } else {
+            false
+        }
+    } else {
+        false
+    };
+    RuntimeStatus {
+        service_running,
+        python_available: Command::new(python_executable()).arg("--version").output().is_ok(),
+        ollama_available,
+        model_ready,
+        watched_folder: config.screenshot_dir,
+        app_data_dir: app_data_dir().display().to_string(),
+    }
+}
 #[tauri::command]
 fn get_dashboard_stats() -> DashboardStats {
-    let script = "import database, json; database.init_db(); print(json.dumps(database.get_stats()))";
-    let output = Command::new(python_executable()).current_dir(project_root())
-        .args(["-c", script]).output();
-    if let Ok(output) = output {
-        if output.status.success() {
-            if let Ok(value) = serde_json::from_slice::<serde_json::Value>(&output.stdout) {
-                let categories = value.get("categories").unwrap_or(&serde_json::Value::Null);
-                return DashboardStats {
-                    total: value.get("total").and_then(|v| v.as_u64()).unwrap_or(0) as u32,
-                    tasks: categories.get("Task").and_then(|v| v.as_u64()).unwrap_or(0) as u32,
-                    events: categories.get("Event").and_then(|v| v.as_u64()).unwrap_or(0) as u32,
-                    receipts: categories.get("Receipt").and_then(|v| v.as_u64()).unwrap_or(0) as u32,
-                };
-            }
-        }
-    }
-    DashboardStats { total: 0, tasks: 0, events: 0, receipts: 0 }
+    let Ok(conn) = Connection::open(database_path()) else { return DashboardStats { total: 0, tasks: 0, events: 0, receipts: 0 }; };
+    let total = conn.query_row("SELECT COUNT(*) FROM screenshots", [], |row| row.get::<_, u32>(0)).unwrap_or(0);
+    let count = |category: &str| conn.query_row("SELECT COUNT(*) FROM screenshots WHERE status = 'PROCESSED' AND category = ?1", [category], |row| row.get::<_, u32>(0)).unwrap_or(0);
+    DashboardStats { total, tasks: count("Task"), events: count("Event"), receipts: count("Receipt") }
 }
 #[tauri::command]
 fn get_recent_items() -> Vec<StashItem> {
-    let script = "import database, json; database.init_db(); print(json.dumps([r.model_dump(mode='json') for r in database.get_all_screenshots()[:8]]))";
-    let output = Command::new(python_executable()).current_dir(project_root())
-        .args(["-c", script]).output();
-    let Ok(output) = output else { return Vec::new(); };
-    if !output.status.success() { return Vec::new(); }
-    let Ok(values) = serde_json::from_slice::<Vec<serde_json::Value>>(&output.stdout) else {
-        return Vec::new();
-    };
-    values.into_iter().map(|value| {
-        let category = value.get("category").and_then(|v| v.as_str()).unwrap_or("Reference").to_string();
+    let Ok(conn) = Connection::open(database_path()) else { return Vec::new(); };
+    let Ok(mut statement) = conn.prepare("SELECT title, category, summary, created_at FROM screenshots ORDER BY created_at DESC LIMIT 8") else { return Vec::new(); };
+    let Ok(rows) = statement.query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?, row.get::<_, String>(3)?))) else { return Vec::new(); };
+    rows.filter_map(Result::ok).map(|(title, category, summary, time)| {
         let accent = match category.as_str() {
             "Task" => "peach",
             "Event" => "purple",
             "Receipt" => "green",
             _ => "lime",
         }.to_string();
-        StashItem {
-            title: value.get("title").and_then(|v| v.as_str()).unwrap_or("Untitled screenshot").to_string(),
-            category,
-            summary: value.get("summary").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            time: value.get("created_at").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            accent,
-        }
+        StashItem { title, category, summary, time, accent }
     }).collect()
 }
 #[tauri::command]

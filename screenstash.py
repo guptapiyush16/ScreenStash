@@ -1,14 +1,11 @@
 """
 ScreenStash CLI Management Tool.
 Usage:
-    python screenstash.py setup       - Configure paths, shortcuts, and startup
-    python screenstash.py install     - Install dependencies and complete setup
     python screenstash.py setup-ai    - Download the configured local AI model with Ollama
     python screenstash.py setup-ai gemma3:4b - Select and download Gemma 3
     python screenstash.py start       - Start background monitoring service
     python screenstash.py stop        - Stop background monitoring service
     python screenstash.py status      - View background service status & stats
-    python screenstash.py dashboard   - Launch desktop dashboard in browser
     python screenstash.py scan        - Scan monitored folder for existing screenshots
 """
 
@@ -21,7 +18,6 @@ import config
 import database as db
 from ai_engine import DEFAULT_MODEL, MODEL_CHOICES, pull_model
 from background_service import is_daemon_running, stop_running_daemon
-from setup_app import run_setup
 from watcher import scan_existing_screenshots
 
 
@@ -64,14 +60,6 @@ def start_service():
     print("[✓] Service started in background. New screenshots will trigger 'ScreenStash Saved' popups.")
 
 
-def install():
-    """Install dependencies and run the setup wizard without forcing login startup."""
-    requirements = Path(__file__).parent / "requirements.txt"
-    subprocess.run([sys.executable, "-m", "pip", "install", "-r", str(requirements)], check=True)
-    run_setup(auto_start=False, start_at_login=False)
-    subprocess.run([sys.executable, str(Path(__file__).parent / "run_desktop.py")], check=False)
-
-
 def setup_ai():
     """Select and download a local Ollama model while hiding model parameters."""
     cfg = config.load_config()
@@ -101,11 +89,7 @@ def main():
 
     cmd = sys.argv[1].lower()
 
-    if cmd == "setup":
-        run_setup()
-    elif cmd == "install":
-        install()
-    elif cmd == "setup-ai":
+    if cmd == "setup-ai":
         setup_ai()
     elif cmd == "start":
         start_service()
@@ -116,15 +100,12 @@ def main():
             print("[*] ScreenStash background service is not currently running.")
     elif cmd == "status":
         print_status()
-    elif cmd == "dashboard":
-        print("[*] Opening ScreenStash Dashboard...")
-        subprocess.run([sys.executable, str(Path(__file__).parent / "run_desktop.py")])
     elif cmd == "scan":
         print("[*] Scanning screenshot directory...")
         count = scan_existing_screenshots()
         print(f"[✓] Processed {count} new screenshot(s).")
     else:
-        print(f"[!] Unknown command '{cmd}'. Available commands: install, setup, setup-ai, start, stop, status, dashboard, scan")
+        print(f"[!] Unknown command '{cmd}'. Available commands: setup-ai, start, stop, status, scan")
 
 
 if __name__ == "__main__":
