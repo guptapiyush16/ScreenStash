@@ -9,15 +9,22 @@ import json
 import os
 import uuid
 import base64
+import threading
+import time
+from collections import defaultdict, deque
 from datetime import datetime, timezone
 
-from fastapi import FastAPI, File, Header, HTTPException, UploadFile
+from fastapi import FastAPI, File, Header, HTTPException, Request, UploadFile
 from google import genai
 from pydantic import BaseModel, Field
 from sqlalchemy import DateTime, Integer, String, UniqueConstraint, create_engine, select
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
+from starlette.responses import JSONResponse
 
 MONTHLY_LIMIT = 50
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+MAX_REQUESTS_PER_HOUR = 30
+MAX_CONCURRENT_EXTRACTIONS = 2
 DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///./screenstash_api.db")
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash-lite")
 
@@ -51,6 +58,9 @@ class ExtractionResponse(BaseModel):
 engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 Base.metadata.create_all(engine)
 app = FastAPI(title="ScreenStash Cloud AI", docs_url=None, redoc_url=None)
+_request_times: dict[str, deque[float]] = defaultdict(deque)
+_rate_lock = threading.Lock()
+_extraction_slots = threading.BoundedSemaphore(MAX_CONCURRENT_EXTRACTIONS)
 
 SCHEMA = {
     "type": "object",
@@ -79,20 +89,69 @@ def validated_installation_id(value: str | None) -> str:
         raise HTTPException(status_code=400, detail="A valid installation identifier is required") from exc
 
 
+def client_address(request: Request) -> str:
+    """Use the proxy-provided source address, falling back safely for local runs."""
+    forwarded = request.headers.get("x-forwarded-for", "")
+    return forwarded.split(",")[0].strip() if forwarded else (request.client.host if request.client else "unknown")
+
+
+def enforce_rate_limit(request: Request) -> None:
+    now = time.monotonic()
+    client = client_address(request)
+    with _rate_lock:
+        recent = _request_times[client]
+        while recent and now - recent[0] >= 3600:
+            recent.popleft()
+        if len(recent) >= MAX_REQUESTS_PER_HOUR:
+            raise HTTPException(status_code=429, detail="Too many extraction requests; try again later")
+        recent.append(now)
+
+
+def has_expected_image_signature(image_bytes: bytes, content_type: str | None) -> bool:
+    """Reject arbitrary files disguised with an image MIME type."""
+    signatures = {
+        "image/png": image_bytes.startswith(b"\x89PNG\r\n\x1a\n"),
+        "image/jpeg": image_bytes.startswith(b"\xff\xd8\xff"),
+        "image/webp": len(image_bytes) >= 12 and image_bytes.startswith(b"RIFF") and image_bytes[8:12] == b"WEBP",
+        "image/bmp": image_bytes.startswith(b"BM"),
+    }
+    return signatures.get(content_type, False)
+
+
+@app.middleware("http")
+async def reject_oversized_requests(request: Request, call_next):
+    if request.url.path == "/v1/extractions":
+        content_length = request.headers.get("content-length")
+        if content_length:
+            try:
+                if int(content_length) > MAX_UPLOAD_BYTES + 16_384:
+                    return JSONResponse(
+                        {"detail": "Screenshots must be 10 MB or smaller"}, status_code=413
+                    )
+            except ValueError:
+                return JSONResponse(
+                    {"detail": "Invalid Content-Length"}, status_code=400
+                )
+    return await call_next(request)
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
 @app.post("/v1/extractions", response_model=ExtractionResponse)
-def extract(image: UploadFile = File(...), x_installation_id: str | None = Header(default=None)) -> ExtractionResponse:
+def extract(request: Request, image: UploadFile = File(...), x_installation_id: str | None = Header(default=None)) -> ExtractionResponse:
     """Extract from an uploaded screenshot without persisting the image or its contents."""
     installation_id = validated_installation_id(x_installation_id)
+    enforce_rate_limit(request)
     if image.content_type not in {"image/png", "image/jpeg", "image/webp", "image/bmp"}:
         raise HTTPException(status_code=415, detail="Supported image types are PNG, JPEG, WEBP, and BMP")
-    image_bytes = image.file.read(10 * 1024 * 1024 + 1)
-    if not image_bytes or len(image_bytes) > 10 * 1024 * 1024:
+    image_bytes = image.file.read(MAX_UPLOAD_BYTES + 1)
+    if not image_bytes or len(image_bytes) > MAX_UPLOAD_BYTES:
         raise HTTPException(status_code=413, detail="Screenshots must be 10 MB or smaller")
+    if not has_expected_image_signature(image_bytes, image.content_type):
+        raise HTTPException(status_code=415, detail="The uploaded file does not match its image type")
     month = current_month()
     now = datetime.now(timezone.utc)
 
@@ -114,6 +173,8 @@ def extract(image: UploadFile = File(...), x_installation_id: str | None = Heade
             "Return only data matching the supplied schema.\n\n"
             f"Filename: {image.filename or 'screenshot'}"
         )
+        if not _extraction_slots.acquire(blocking=False):
+            raise HTTPException(status_code=429, detail="Cloud AI is busy; try again shortly")
         try:
             interaction = client.interactions.create(
                 model=GEMINI_MODEL,
@@ -133,6 +194,8 @@ def extract(image: UploadFile = File(...), x_installation_id: str | None = Heade
         except Exception as exc:
             # Intentionally do not log OCR content or filenames.
             raise HTTPException(status_code=502, detail="Cloud extraction failed") from exc
+        finally:
+            _extraction_slots.release()
 
         if usage:
             usage.count += 1

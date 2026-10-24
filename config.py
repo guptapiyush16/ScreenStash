@@ -14,6 +14,8 @@ from typing import Dict, Any
 # Application metadata
 APP_NAME = "ScreenStash"
 APP_DIR_NAME = "ScreenStash"
+DEFAULT_CLOUD_API_URL = "https://screenstash-cloudapi.onrender.com"
+MAX_SCREENSHOT_BYTES = 10 * 1024 * 1024
 
 
 def get_app_data_dir() -> Path:
@@ -94,7 +96,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "ollama_url": "http://localhost:11434",
     "ollama_model": "gemma3:4b",
     "ai_provider": "offline",
-    "cloud_api_url": "https://screenstash-cloudapi.onrender.com",
+    "cloud_api_url": DEFAULT_CLOUD_API_URL,
     "cloud_consent": False,
     "cloud_installation_id": "",
     "tesseract_cmd": r"C:\Program Files\Tesseract-OCR\tesseract.exe" if sys.platform == "win32" else "tesseract",

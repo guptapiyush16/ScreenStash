@@ -19,8 +19,10 @@ def get_db_connection() -> sqlite3.Connection:
     """Creates a connection to the SQLite database with dictionary rows."""
     conn = sqlite3.connect(str(DATABASE_PATH), check_same_thread=False, timeout=10)
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA busy_timeout = 10000")
-    conn.execute("PRAGMA journal_mode = WAL")
+    # WAL allows the watcher and dashboard to read while another screenshot is
+    # being written. busy_timeout avoids immediately failing during short bursts.
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=10000")
     return conn
 
 
@@ -78,15 +80,16 @@ def insert_screenshot(
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # Check if duplicate already exists by hash
-    cursor.execute("SELECT id FROM screenshots WHERE file_hash = ?", (file_hash,))
-    existing = cursor.fetchone()
-    if existing:
-        conn.close()
-        return existing["id"]
-
-    now = datetime.now().isoformat()
     try:
+        # Serialize the check-and-insert sequence across watcher processes.
+        cursor.execute("BEGIN IMMEDIATE")
+        cursor.execute("SELECT id FROM screenshots WHERE file_hash = ?", (file_hash,))
+        existing = cursor.fetchone()
+        if existing:
+            conn.commit()
+            conn.close()
+            return existing["id"]
+        now = datetime.now().isoformat()
         cursor.execute("""
             INSERT INTO screenshots (
                 file_path, file_name, file_hash, file_size_bytes, created_at, status
@@ -97,6 +100,7 @@ def insert_screenshot(
         conn.close()
         return new_id
     except sqlite3.IntegrityError as e:
+        conn.rollback()
         conn.close()
         logger.warning(f"Screenshot already exists (integrity error): {file_path} - {e}")
         return None

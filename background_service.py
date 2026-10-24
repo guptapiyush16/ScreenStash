@@ -49,12 +49,21 @@ class BackgroundDaemon:
         self._running = False
 
     def write_pid(self):
-        """Record PID to prevent multiple daemon instances."""
+        """Atomically record PID so two watcher processes cannot start together."""
         try:
-            with open(PID_FILE, "w") as f:
+            fd = os.open(PID_FILE, os.O_WRONLY | os.O_CREAT | os.O_EXCL)
+            with os.fdopen(fd, "w") as f:
                 f.write(str(os.getpid()))
+            return True
+        except FileExistsError:
+            if not is_daemon_running():
+                PID_FILE.unlink(missing_ok=True)
+                return self.write_pid()
+            logger.info("ScreenStash watcher is already running")
+            return False
         except Exception as e:
             logger.warning(f"Could not write PID file: {e}")
+            return False
 
     def remove_pid(self):
         """Remove PID file on clean shutdown."""
@@ -66,7 +75,8 @@ class BackgroundDaemon:
 
     def start(self):
         """Starts the background monitoring loop."""
-        self.write_pid()
+        if not self.write_pid():
+            return
         self._running = True
 
         screenshot_dir = self.cfg.get("screenshot_dir")
@@ -104,7 +114,9 @@ def is_daemon_running() -> bool:
             PID_FILE.unlink(missing_ok=True)
             return False
         process = psutil.Process(pid)
-        return process.name().lower().startswith(("python", "screenstash"))
+        name = process.name().lower()
+        command = " ".join(process.cmdline()).lower()
+        return "screenstash-sidecar" in name or "background_service.py" in command or "background.pyw" in command
     except Exception:
         return False
 

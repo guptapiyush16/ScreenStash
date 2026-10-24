@@ -25,7 +25,7 @@ from PIL import Image
 import requests
 import pytesseract
 
-from config import load_config
+from config import DEFAULT_CLOUD_API_URL, MAX_SCREENSHOT_BYTES, load_config
 from ai_engine import is_local_ollama_url
 from models import ExtractionResult, Category, ProcessStatus, ScreenshotRecord
 import database as db
@@ -70,6 +70,19 @@ def calculate_file_hash(file_path: Path) -> str:
     return sha256.hexdigest()
 
 
+def is_safe_image(file_path: Path) -> bool:
+    """Validate image structure and dimensions before local OCR or cloud upload."""
+    try:
+        with Image.open(file_path) as image:
+            width, height = image.size
+            if width * height > 40_000_000:
+                return False
+            image.verify()
+        return True
+    except Exception:
+        return False
+
+
 def run_ocr(file_path: Path, tesseract_cmd: Optional[str] = None) -> Tuple[str, bool]:
     """
     Runs Tesseract OCR on the given image.
@@ -82,6 +95,11 @@ def run_ocr(file_path: Path, tesseract_cmd: Optional[str] = None) -> Tuple[str, 
 
     try:
         with Image.open(file_path) as img:
+            # Reject decompression bombs before asking Pillow/Tesseract to decode pixels.
+            width, height = img.size
+            if width * height > 40_000_000:
+                logger.warning("Skipping image with excessive dimensions: %s", file_path.name)
+                return "", False
             # Convert to RGB if needed (e.g. RGBA or palette)
             if img.mode not in ("RGB", "L"):
                 img = img.convert("RGB")
@@ -169,10 +187,15 @@ def call_gemini_cloud_ai(file_path: Path, config: Dict[str, Any]) -> Optional[Ex
     """Upload one screenshot to the consented ScreenStash cloud API; never persist it locally there."""
     api_url = str(config.get("cloud_api_url", "")).rstrip("/")
     parsed_url = urlparse(api_url)
-    if not config.get("cloud_consent") or parsed_url.scheme != "https" or not parsed_url.netloc:
+    if (
+        not config.get("cloud_consent")
+        or api_url != DEFAULT_CLOUD_API_URL
+        or parsed_url.scheme != "https"
+        or parsed_url.netloc != "screenstash-cloudapi.onrender.com"
+    ):
         logger.warning("Cloud AI was selected without valid HTTPS endpoint and consent")
         return None
-    if file_path.stat().st_size > 10 * 1024 * 1024:
+    if file_path.stat().st_size > MAX_SCREENSHOT_BYTES:
         logger.warning("Skipping cloud extraction for oversized screenshot")
         return None
     installation_id = config.get("cloud_installation_id")
@@ -344,12 +367,24 @@ def process_screenshot(file_path_str: str) -> Optional[ScreenshotRecord]:
 
 def _execute_processing(file_path: Path) -> Optional[ScreenshotRecord]:
     record_id: Optional[int] = None
+    # Process only ordinary image files from the watched folder. In particular,
+    # never follow symlinks that could point at unrelated private files.
+    if file_path.is_symlink() or not file_path.is_file():
+        logger.warning("Skipping non-regular screenshot entry: %s", file_path.name)
+        return None
+
     # Step 1: Wait for file write stabilization
     if not wait_for_file_settled(file_path):
         logger.warning(f"File {file_path.name} was not settled in time; it will be retried.")
         return None
 
     file_size = file_path.stat().st_size
+    if file_size > MAX_SCREENSHOT_BYTES:
+        logger.warning("Skipping oversized screenshot: %s", file_path.name)
+        return None
+    if not is_safe_image(file_path):
+        logger.warning("Skipping invalid or unsafe image: %s", file_path.name)
+        return None
     file_name = file_path.name
 
     # Step 2: Deduplication via SHA-256

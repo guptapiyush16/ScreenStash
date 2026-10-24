@@ -2,7 +2,7 @@
 
 import sys
 
-from background_service import BackgroundDaemon, stop_running_daemon
+from background_service import BackgroundDaemon, is_daemon_running, stop_running_daemon
 from ai_engine import MODEL_CHOICES, pull_model
 from config import load_config
 from watcher import scan_existing_screenshots
@@ -15,6 +15,8 @@ def main() -> int:
         return 0
     if command == "stop":
         return 0 if stop_running_daemon() else 1
+    if command == "status":
+        return 0 if is_daemon_running() else 1
     if command == "scan":
         print(f"Processed {scan_existing_screenshots()} screenshot(s).")
         return 0
