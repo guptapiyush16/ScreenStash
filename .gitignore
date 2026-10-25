@@ -9,6 +9,8 @@ __pycache__/
 *$py.class
 *.log
 *.exe
+screenstash-sidecar*
+desktop/src-tauri/screenstash-sidecar*
 
 # Environments
 .env

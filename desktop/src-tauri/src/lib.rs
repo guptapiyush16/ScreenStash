@@ -111,7 +111,7 @@ fn get_recent_items() -> Vec<StashItem> {
 }
 #[tauri::command]
 fn run_pipeline_command(app: tauri::AppHandle, command: String) -> Result<String, String> {
-    let allowed = ["start", "stop", "scan", "setup-ai"];
+    let allowed = ["start", "stop", "setup-ai"];
     if !allowed.contains(&command.as_str()) {
         return Err("Unsupported pipeline command".into());
     }

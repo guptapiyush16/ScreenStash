@@ -37,7 +37,7 @@ jobs:
       - name: Build packaged Python sidecar
         working-directory: ${{ github.workspace }}
         run: |
-          pyinstaller --onefile --windowed --clean --noconfirm `
+          pyinstaller --onefile --windowed --clean --noconfirm --hidden-import _sqlite3 `
             --name screenstash-sidecar `
             --distpath desktop/src-tauri `
             --workpath desktop/.pyinstaller `
@@ -87,7 +87,7 @@ jobs:
       - name: Build packaged Python sidecar
         working-directory: ${{ github.workspace }}
         run: |
-          pyinstaller --onefile --windowed --clean --noconfirm \
+          pyinstaller --onefile --windowed --clean --noconfirm --hidden-import _sqlite3 \
             --name screenstash-sidecar \
             --distpath desktop/src-tauri \
             --workpath desktop/.pyinstaller \

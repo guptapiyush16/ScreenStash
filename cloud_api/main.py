@@ -26,7 +26,7 @@ MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 MAX_REQUESTS_PER_HOUR = 30
 MAX_CONCURRENT_EXTRACTIONS = 2
 DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///./screenstash_api.db")
-GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash-lite")
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-flash-lite-latest")
 
 
 class Base(DeclarativeBase):

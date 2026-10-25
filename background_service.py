@@ -21,6 +21,8 @@ from notifier import show_saved_toast
 logger = logging.getLogger(__name__)
 
 PID_FILE = config.APP_DATA_DIR / "screenstash_daemon.pid"
+STOP_FILE = config.APP_DATA_DIR / "screenstash_daemon.stop"
+CONFIG_POLL_SECONDS = 2.0
 
 
 def handle_screenshot_event(file_path_str: str):
@@ -73,24 +75,57 @@ class BackgroundDaemon:
             except Exception:
                 pass
 
+    def _normalize(self, folder: Optional[str]) -> str:
+        try:
+            return str(Path(folder).expanduser().resolve()) if folder else ""
+        except Exception:
+            return folder or ""
+
+    def _watch(self, folder: str, first_start: bool) -> None:
+        """(Re)point the watcher at a folder. Only new screenshots are processed."""
+        if self.watcher:
+            self.watcher.stop()
+            self.watcher = None
+        self.watched_dir = self._normalize(folder)
+        watcher = ScreenshotWatcher(folder)
+        # Never create folders from a half-typed path in Settings; only the
+        # very first start may create the OS default Screenshots folder.
+        if watcher.start(callback=handle_screenshot_event, create_if_missing=first_start):
+            self.watcher = watcher
+            logger.info(f"Monitoring folder: {folder}")
+
+    def _reload_if_folder_changed(self) -> None:
+        folder = config.load_config().get("screenshot_dir")
+        normalized = self._normalize(folder)
+        if normalized != self.watched_dir or (self.watcher is None and folder and Path(folder).is_dir()):
+            if normalized != self.watched_dir:
+                logger.info(f"Screenshot folder changed: {self.watched_dir} -> {normalized}")
+            self._watch(folder, first_start=False)
+
     def start(self):
         """Starts the background monitoring loop."""
         if not self.write_pid():
             return
+        STOP_FILE.unlink(missing_ok=True)
         self._running = True
+        self.watched_dir = ""
 
-        screenshot_dir = self.cfg.get("screenshot_dir")
         logger.info(f"ScreenStash Background Daemon started (PID: {os.getpid()})")
-        logger.info(f"Monitoring folder: {screenshot_dir}")
+        self._watch(self.cfg.get("screenshot_dir"), first_start=True)
 
-        event_handler = ScreenshotEventHandler(callback=handle_screenshot_event)
-        self.watcher = ScreenshotWatcher(screenshot_dir)
-        self.watcher.start(callback=handle_screenshot_event)
-
+        last_poll = time.time()
         try:
             while self._running:
-                time.sleep(1)
+                time.sleep(0.5)
+                if STOP_FILE.exists():
+                    logger.info("Stop requested by ScreenStash desktop app.")
+                    break
+                if time.time() - last_poll >= CONFIG_POLL_SECONDS:
+                    last_poll = time.time()
+                    self._reload_if_folder_changed()
         except (KeyboardInterrupt, SystemExit):
+            pass
+        finally:
             self.stop()
 
     def stop(self):
@@ -98,7 +133,9 @@ class BackgroundDaemon:
         self._running = False
         if self.watcher:
             self.watcher.stop()
+            self.watcher = None
         self.remove_pid()
+        STOP_FILE.unlink(missing_ok=True)
         logger.info("ScreenStash Background Daemon stopped.")
 
 
@@ -122,7 +159,11 @@ def is_daemon_running() -> bool:
 
 
 def stop_running_daemon() -> bool:
-    """Terminates any active background daemon process."""
+    """
+    Asks the background daemon to exit on its own (stop-flag file) so the
+    PyInstaller bootloader can clean up its _MEI temp folder. A hard kill is
+    only used as a last resort.
+    """
     if not PID_FILE.exists():
         return False
     pid = None
@@ -132,15 +173,22 @@ def stop_running_daemon() -> bool:
         if not is_daemon_running():
             PID_FILE.unlink(missing_ok=True)
             return False
+        STOP_FILE.touch()
+        deadline = time.time() + 6.0
+        while time.time() < deadline:
+            if not PID_FILE.exists():
+                return True
+            time.sleep(0.25)
+        logger.warning(f"Daemon PID {pid} did not stop gracefully; terminating.")
         os.kill(pid, signal.SIGTERM)
         time.sleep(0.5)
-        if PID_FILE.exists():
-            PID_FILE.unlink()
+        PID_FILE.unlink(missing_ok=True)
+        STOP_FILE.unlink(missing_ok=True)
         return True
     except Exception as e:
         logger.warning(f"Failed to stop daemon PID {pid}: {e}")
-        if PID_FILE.exists():
-            PID_FILE.unlink()
+        PID_FILE.unlink(missing_ok=True)
+        STOP_FILE.unlink(missing_ok=True)
         return False
 
 

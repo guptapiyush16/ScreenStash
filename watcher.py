@@ -25,11 +25,25 @@ SUPPORTED_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
 class ScreenshotEventHandler(FileSystemEventHandler):
     """Handles new file creation events in the screenshot directory."""
 
-    def __init__(self, callback: Optional[Callable[[str], None]] = None):
+    def __init__(self, callback: Optional[Callable[[str], None]] = None, only_new_since: Optional[float] = None):
         super().__init__()
         self.callback = callback or process_screenshot
         self._recently_handled: dict[str, float] = {}
         self._lock = threading.Lock()
+        # Files that already existed before this timestamp are never processed.
+        # A small grace window covers clock skew between the FS and time.time().
+        self.only_new_since = only_new_since
+
+    def _is_preexisting(self, path: Path) -> bool:
+        if self.only_new_since is None:
+            return False
+        try:
+            stat = path.stat()
+        except OSError:
+            return True
+        # st_birthtime (macOS) / st_ctime (Windows) = creation time.
+        created = getattr(stat, "st_birthtime", None) or stat.st_ctime
+        return created < self.only_new_since - 2.0
 
     def _should_handle(self, file_path_str: str) -> bool:
         """Debounce and check if file has a valid screenshot extension."""
@@ -41,6 +55,10 @@ class ScreenshotEventHandler(FileSystemEventHandler):
 
         # Ignore temporary / partial files
         if path.name.startswith(".") or path.name.startswith("~") or path.suffix.lower() == ".tmp":
+            return False
+
+        # Only brand-new screenshots: edits/syncs of old files are ignored.
+        if self._is_preexisting(path):
             return False
 
         with self._lock:
@@ -96,24 +114,29 @@ class ScreenshotWatcher:
         self.observer: Optional[Observer] = None
         self.is_active = False
 
-    def start(self, callback: Optional[Callable[[str], None]] = None):
-        """Starts watching the screenshot directory."""
+    def start(self, callback: Optional[Callable[[str], None]] = None, create_if_missing: bool = True,
+              only_new: bool = True) -> bool:
+        """Starts watching the screenshot directory. Returns True when active."""
         if self.is_active:
-            return
+            return True
 
         if not self.directory.exists():
+            if not create_if_missing:
+                logger.warning(f"Screenshot folder does not exist, not watching yet: {self.directory}")
+                return False
             try:
                 self.directory.mkdir(parents=True, exist_ok=True)
             except Exception as e:
                 logger.error(f"Could not create screenshot directory {self.directory}: {e}")
-                return
+                return False
 
-        event_handler = ScreenshotEventHandler(callback=callback)
+        event_handler = ScreenshotEventHandler(callback=callback, only_new_since=time.time() if only_new else None)
         self.observer = Observer()
         self.observer.schedule(event_handler, str(self.directory), recursive=False)
         self.observer.start()
         self.is_active = True
         logger.info(f"ScreenshotWatcher started monitoring: {self.directory}")
+        return True
 
     def stop(self):
         """Stops the observer."""

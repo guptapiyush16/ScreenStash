@@ -9,41 +9,87 @@ screenshot is detected and organized:
 import os
 import sys
 import time
+import base64
 import logging
 import subprocess
+import tempfile
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
 PS_TOAST_SCRIPT = Path(__file__).parent / "send_toast.ps1"
+IS_FROZEN = bool(getattr(sys, "frozen", False))
+
+# Inlined copy of send_toast.ps1 so the packaged sidecar does not depend on a
+# data file that PyInstaller never bundled.
+_PS_TOAST_TEMPLATE = r"""
+try {
+    [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null
+    $template = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent([Windows.UI.Notifications.ToastTemplateType]::ToastText02)
+    $textNodes = $template.GetElementsByTagName("text")
+    $textNodes.Item(0).AppendChild($template.CreateTextNode('__TITLE__')) | Out-Null
+    $textNodes.Item(1).AppendChild($template.CreateTextNode('__MESSAGE__')) | Out-Null
+    $toast = [Windows.UI.Notifications.ToastNotification]::new($template)
+    $appId = "{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\WindowsPowerShell\v1.0\powershell.exe"
+    [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier($appId).Show($toast)
+} catch { }
+"""
+
+
+def _child_process_kwargs() -> dict:
+    """
+    Spawn helpers from a neutral working directory with a clean PyInstaller
+    environment. A child that starts inside (or inherits) the one-file
+    _MEIxxxx extraction folder keeps it locked, which makes the bootloader
+    show "Failed to remove temporary directory" when the sidecar exits.
+    """
+    env = os.environ.copy()
+    env["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
+    for key in ("_MEIPASS2", "_PYI_APPLICATION_HOME_DIR", "_PYI_ARCHIVE_FILE", "_PYI_PARENT_PROCESS_LEVEL"):
+        env.pop(key, None)
+    kwargs = {"cwd": tempfile.gettempdir(), "env": env, "close_fds": True,
+              "stdin": subprocess.DEVNULL, "stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL}
+    if sys.platform == "win32":
+        kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+    return kwargs
+
+
+def _ps_quote(value: str) -> str:
+    """Escape text for a single-quoted PowerShell string literal."""
+    return (value or "").replace("'", "''").replace("\r", " ").replace("\n", " ")[:200]
 
 
 def send_windows_native_toast(title: str, message: str) -> bool:
     """
     Fires the official Windows 10/11 Action Center notification banner
-    in the bottom-right corner using PowerShell WinRT API.
+    in the bottom-right corner using the PowerShell WinRT API.
     """
-    if sys.platform != "win32" or not PS_TOAST_SCRIPT.exists():
+    if sys.platform != "win32":
         return False
 
-    cmd = [
-        "powershell",
-        "-WindowStyle", "Hidden",
-        "-NoProfile",
-        "-ExecutionPolicy", "Bypass",
-        "-File", str(PS_TOAST_SCRIPT.resolve()),
-        "-Title", title,
-        "-Message", message
-    ]
+    script = _PS_TOAST_TEMPLATE.replace("__TITLE__", _ps_quote(title)).replace("__MESSAGE__", _ps_quote(message))
+    encoded = base64.b64encode(script.encode("utf-16-le")).decode("ascii")
+    cmd = ["powershell", "-WindowStyle", "Hidden", "-NoProfile", "-NonInteractive",
+           "-ExecutionPolicy", "Bypass", "-EncodedCommand", encoded]
     try:
-        subprocess.Popen(
-            cmd,
-            creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
-            close_fds=True
-        )
+        subprocess.Popen(cmd, **_child_process_kwargs())
         return True
     except Exception as e:
         logger.debug(f"Could not send native Windows toast: {e}")
+        return False
+
+
+def send_macos_notification(title: str, message: str) -> bool:
+    """Native macOS Notification Center banner via osascript."""
+    if sys.platform != "darwin":
+        return False
+    safe = lambda text: (text or "").replace("\\", "\\\\").replace('"', '\\"')[:200]
+    script = f'display notification "{safe(message)}" with title "{safe(title)}"'
+    try:
+        subprocess.Popen(["osascript", "-e", script], **_child_process_kwargs())
+        return True
+    except Exception as e:
+        logger.debug(f"Could not send macOS notification: {e}")
         return False
 
 
@@ -171,14 +217,18 @@ def show_saved_toast(
     """
     Main entrypoint:
     Fires exactly ONE notification per event.
-    Prioritizes official Windows 10/11 Action Center Toast on Windows.
-    Falls back to floating Tkinter card if non-Windows or if toast fails.
+    Prioritizes the native OS notification (Windows Action Center / macOS
+    Notification Center). The Tkinter card is only used from source installs,
+    never from the packaged sidecar: there sys.executable is the sidecar exe
+    itself, and re-launching it would lock its one-file temp folder.
     """
-    if sys.platform == "win32" and PS_TOAST_SCRIPT.exists():
-        # Clean Windows 10/11 Action Center notification
-        send_windows_native_toast(title, message)
+    if send_windows_native_toast(title, message) or send_macos_notification(title, message):
+        return
+    if IS_FROZEN:
+        logger.debug("No native notifier available in packaged build; skipping popup.")
+        return
     else:
-        # Cross-platform / fallback floating Tkinter card
+        # Source-install fallback floating Tkinter card
         notifier_script = str(Path(__file__).resolve())
         cmd = [
             sys.executable,
