@@ -21,16 +21,16 @@ from background_service import is_daemon_running, stop_running_daemon
 from watcher import scan_existing_screenshots
 
 
-def print_status():
+def print_status() -> int:
     running = is_daemon_running()
     cfg = config.load_config()
     db.init_db()
     stats = db.get_stats()
 
     print("=" * 50)
-    print("📸 ScreenStash System Status")
+    print("ScreenStash System Status")
     print("=" * 50)
-    status_str = "🟢 RUNNING (Active in background)" if running else "⚪ STOPPED"
+    status_str = "[RUNNING] Active in background" if running else "[STOPPED] Inactive"
     print(f"Service Status     : {status_str}")
     print(f"Monitored Folder   : {cfg.get('screenshot_dir')}")
     print(f"Total Screenshots  : {stats.get('total', 0)}")
@@ -39,6 +39,7 @@ def print_status():
     print(f"Receipts Detected  : {stats.get('categories', {}).get('Receipt', 0)}")
     print(f"App Data Path      : {config.APP_DATA_DIR}")
     print("=" * 50)
+    return 0 if running else 1
 
 
 def start_service():
@@ -99,7 +100,7 @@ def main():
         else:
             print("[*] ScreenStash background service is not currently running.")
     elif cmd == "status":
-        print_status()
+        sys.exit(print_status())
     elif cmd == "scan":
         print("[*] Scanning screenshot directory...")
         count = scan_existing_screenshots()

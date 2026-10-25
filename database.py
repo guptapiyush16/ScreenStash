@@ -295,6 +295,13 @@ def get_stats() -> Dict[str, Any]:
     cursor.execute("SELECT COUNT(*) FROM screenshots WHERE status = 'FAILED'")
     failed = cursor.fetchone()[0]
 
+    cursor.execute("""
+        SELECT COUNT(*) FROM screenshots 
+        WHERE status = 'PROCESSED' 
+        AND date(processed_at, 'localtime') = date('now', 'localtime')
+    """)
+    processed_today = cursor.fetchone()[0]
+
     # Category counts
     cursor.execute("""
         SELECT category, COUNT(*) as count 
@@ -310,6 +317,7 @@ def get_stats() -> Dict[str, Any]:
         "total": total,
         "pending": pending,
         "processed": processed,
+        "processed_today": processed_today,
         "failed": failed,
         "categories": category_counts
     }
