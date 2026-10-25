@@ -20,6 +20,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -70,6 +75,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -81,8 +91,8 @@ jobs:
       - name: Install Python sidecar dependencies
         working-directory: ${{ github.workspace }}
         run: |
-          python3 -m pip install --break-system-packages --upgrade pip
-          python3 -m pip install --break-system-packages -r requirements.txt pyinstaller
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pyinstaller
 
       - name: Build packaged Python sidecar
         working-directory: ${{ github.workspace }}
