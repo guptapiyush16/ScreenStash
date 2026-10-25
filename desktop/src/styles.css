@@ -149,3 +149,9 @@
 .clear-filter-btn{border:0;background:none;color:#2d5013;font-weight:600;cursor:pointer;font-size:11px;text-decoration:underline}
 .search-results-chip{display:flex;align-items:center;justify-content:space-between;background:#eef5ff;border:1px solid #cce0ff;color:#1e40af;font-size:12px;padding:7px 14px;border-radius:8px;margin-bottom:16px}
 .search-results-chip button{border:0;background:none;color:#1e40af;font-weight:600;cursor:pointer;font-size:11px;text-decoration:underline}
+/* AI Filtering UI */
+.ai-reason-pill{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;color:#2b5514;background:#edf6e4;border:1px solid #dcecc9;padding:2px 8px;border-radius:12px;margin:3px 0 5px}
+.ai-reason-pill span{font-weight:700;color:#527e2f}
+.ai-toggle-pill{border:1px solid #dcecc9;background:#f4f9ee;color:#497523;font-size:11px;font-weight:600;padding:5px 10px;border-radius:20px;cursor:pointer;display:inline-flex;align-items:center;gap:5px;transition:all .15s ease;white-space:nowrap}
+.ai-toggle-pill:hover{background:#e8f4da}
+.ai-toggle-pill.active{background:#292b27;color:#d8f3ae;border-color:#292b27;box-shadow:0 1px 3px rgba(0,0,0,0.1)}

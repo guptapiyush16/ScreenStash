@@ -12,6 +12,12 @@ import {
 } from "./api";
 import type { AppConfig, DashboardStats, RuntimeStatus, StashItem } from "./types";
 import { MonthlyCalendar } from "./Calendar";
+import {
+  evaluateNeedsAttention,
+  evaluateSavedForLater,
+  evaluateSemanticScore,
+  executeAiFilter
+} from "./aiFilter";
 
 const CLOUD_API_URL = "https://screenstash-cloudapi.onrender.com";
 const defaultConfig: AppConfig = {
@@ -60,6 +66,13 @@ function App() {
   const [timeframe, setTimeframe] = useState<Timeframe>("7days");
   const [smartFilter, setSmartFilter] = useState<SmartFilter>("none");
   const [lightboxItem, setLightboxItem] = useState<StashItem | null>(null);
+  const [aiFilterActive, setAiFilterActive] = useState(true);
+  const [deepAiLoading, setDeepAiLoading] = useState(false);
+  const [deepAiEngine, setDeepAiEngine] = useState("");
+  const [deepAiResults, setDeepAiResults] = useState<{
+    matchedKeys: Set<string>;
+    reasons: Record<string, string>;
+  } | null>(null);
 
   async function checkCloudConnection() {
     setCloudStatus("checking");
@@ -183,13 +196,36 @@ function App() {
     refreshDashboard().catch(() => undefined);
   }
 
-  // Smart collection counts
-  const needsAttentionCount = useMemo(() => items.filter((i) => i.category === "Task").length, [items]);
-  const savedForLaterCount = useMemo(() => items.filter((i) => i.category === "Reference").length, [items]);
+  // Smart collection counts evaluated by AI
+  const needsAttentionCount = useMemo(
+    () => items.filter((i) => evaluateNeedsAttention(i).needsAttention).length,
+    [items]
+  );
+  const savedForLaterCount = useMemo(
+    () => items.filter((i) => evaluateSavedForLater(i).isSaved).length,
+    [items]
+  );
 
-  // Combined Filtering Pipeline: Timeframe -> SmartFilter -> SearchQuery -> View
-  const visibleItems = useMemo(() => {
+  async function triggerDeepAiFilter() {
+    if (!searchQuery.trim()) return;
+    setDeepAiLoading(true);
+    setNotice("Running deep AI neural reasoning across your stash…");
+    try {
+      const res = await executeAiFilter(searchQuery, items, config, status);
+      setDeepAiResults({ matchedKeys: res.matchedKeys, reasons: res.reasons });
+      setDeepAiEngine(res.engine);
+      setNotice(`AI Filter complete (${res.engine}): found ${res.matchedKeys.size} matches.`);
+    } catch {
+      setNotice("AI semantic search active (fallback engine).");
+    } finally {
+      setDeepAiLoading(false);
+    }
+  }
+
+  // Combined Filtering Pipeline: Timeframe -> View -> SmartFilter -> SearchQuery (with AI/LLM semantic reasoning)
+  const { visibleItems, itemAiReasons } = useMemo(() => {
     let list = items;
+    const reasonsMap: Record<string, string> = {};
 
     // 1. Timeframe filter
     if (timeframe !== "all") {
@@ -213,37 +249,93 @@ function App() {
       });
     }
 
-    // 2. Navigation View filter
+    // 2. Navigation View filter (Action Items view filtered by AI tasks)
     if (view === "tasks") {
-      list = list.filter((item) => item.category === "Task");
-    }
-
-    // 3. Smart Collection filter
-    if (smartFilter === "attention") {
-      list = list.filter((item) => item.category === "Task");
-    } else if (smartFilter === "saved") {
-      list = list.filter((item) => item.category === "Reference");
-    } else if (smartFilter === "today") {
-      const todayStr = new Date().toISOString().slice(0, 10);
-      list = list.filter((item) => item.time && item.time.startsWith(todayStr));
-    }
-
-    // 4. Live Search Query filter
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase().trim();
       list = list.filter((item) => {
-        const titleMatch = item.title.toLowerCase().includes(q);
-        const summaryMatch = item.summary?.toLowerCase().includes(q);
-        const catMatch = item.category?.toLowerCase().includes(q);
-        const ocrMatch = item.raw_ocr_text?.toLowerCase().includes(q);
-        const tasksMatch = item.tasks?.some((t) => t.toLowerCase().includes(q));
-        const datesMatch = item.dates?.some((d) => d.toLowerCase().includes(q));
-        return titleMatch || summaryMatch || catMatch || ocrMatch || tasksMatch || datesMatch;
+        const hasTasks = Boolean(item.tasks && item.tasks.length > 0);
+        const isTaskCat = item.category === "Task";
+        if (hasTasks || isTaskCat) {
+          reasonsMap[`${item.title}-${item.time}`] = hasTasks
+            ? `${item.tasks?.length} actionable task(s)`
+            : "Task category";
+          return true;
+        }
+        return false;
       });
     }
 
-    return list;
-  }, [items, timeframe, view, smartFilter, searchQuery]);
+    // 3. Smart Collection filter (AI / LLM evaluated)
+    if (smartFilter === "attention") {
+      list = list.filter((item) => {
+        const aiEval = evaluateNeedsAttention(item);
+        if (aiEval.needsAttention) {
+          reasonsMap[`${item.title}-${item.time}`] = aiEval.reason;
+          return true;
+        }
+        return false;
+      });
+    } else if (smartFilter === "saved") {
+      list = list.filter((item) => {
+        const aiEval = evaluateSavedForLater(item);
+        if (aiEval.isSaved) {
+          reasonsMap[`${item.title}-${item.time}`] = aiEval.reason;
+          return true;
+        }
+        return false;
+      });
+    } else if (smartFilter === "today") {
+      const todayStr = new Date().toISOString().slice(0, 10);
+      list = list.filter((item) => {
+        const isToday = item.time && item.time.startsWith(todayStr);
+        if (isToday) {
+          reasonsMap[`${item.title}-${item.time}`] = "Processed today";
+          return true;
+        }
+        return false;
+      });
+    }
+
+    // 4. Live Search Query filter (AI / LLM Semantic vs Substring)
+    if (searchQuery.trim()) {
+      if (deepAiResults) {
+        // Explicit Neural LLM result (Ollama or Cloud)
+        list = list.filter((item, idx) => {
+          const key = `${item.title}-${item.time || idx}`;
+          if (deepAiResults.matchedKeys.has(key)) {
+            reasonsMap[`${item.title}-${item.time}`] =
+              deepAiResults.reasons[key] || "Matched by Neural LLM";
+            return true;
+          }
+          return false;
+        });
+      } else if (aiFilterActive) {
+        // Realtime On-Device Semantic Intent AI
+        const q = searchQuery.trim();
+        list = list.filter((item) => {
+          const { score, reason } = evaluateSemanticScore(item, q);
+          if (score >= 25) {
+            reasonsMap[`${item.title}-${item.time}`] = reason;
+            return true;
+          }
+          return false;
+        });
+      } else {
+        // Standard substring fallback
+        const q = searchQuery.toLowerCase().trim();
+        list = list.filter((item) => {
+          const titleMatch = item.title.toLowerCase().includes(q);
+          const summaryMatch = item.summary?.toLowerCase().includes(q);
+          const catMatch = item.category?.toLowerCase().includes(q);
+          const ocrMatch = item.raw_ocr_text?.toLowerCase().includes(q);
+          const tasksMatch = item.tasks?.some((t) => t.toLowerCase().includes(q));
+          const datesMatch = item.dates?.some((d) => d.toLowerCase().includes(q));
+          return titleMatch || summaryMatch || catMatch || ocrMatch || tasksMatch || datesMatch;
+        });
+      }
+    }
+
+    return { visibleItems: list, itemAiReasons: reasonsMap };
+  }, [items, timeframe, view, smartFilter, searchQuery, aiFilterActive, deepAiResults]);
 
   // Dynamic timeframe stats calculated from timeframe-filtered items
   const currentMetrics = useMemo(() => {
@@ -489,21 +581,55 @@ function App() {
               <input
                 type="text"
                 className="search-input"
-                placeholder="Search screenshots, OCR, tasks…"
+                placeholder="Search with AI (e.g. 'urgent tasks', 'meeting with team', 'coffee receipts')…"
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  if (deepAiResults) setDeepAiResults(null);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") triggerDeepAiFilter();
+                }}
               />
               {searchQuery && (
                 <button
                   type="button"
                   className="search-clear-btn"
-                  onClick={() => setSearchQuery("")}
+                  onClick={() => {
+                    setSearchQuery("");
+                    setDeepAiResults(null);
+                  }}
                   title="Clear search"
                 >
                   ×
                 </button>
               )}
             </div>
+
+            <button
+              type="button"
+              className={`ai-toggle-pill ${aiFilterActive ? "active" : ""}`}
+              onClick={() => {
+                if (searchQuery.trim() && !deepAiLoading) {
+                  triggerDeepAiFilter();
+                } else {
+                  setAiFilterActive((prev) => !prev);
+                }
+              }}
+              title={
+                aiFilterActive
+                  ? "AI Semantic filtering enabled. Click to run deep LLM reasoning."
+                  : "Enable AI Semantic filtering"
+              }
+            >
+              {deepAiLoading
+                ? "✦ AI Analyzing…"
+                : aiFilterActive
+                ? deepAiResults
+                  ? `✦ ${deepAiEngine}`
+                  : "✦ AI Filter ON"
+                : "✦ AI Filter OFF"}
+            </button>
           </div>
         </header>
 
@@ -517,9 +643,20 @@ function App() {
           <div className="search-results-chip">
             <span>
               Found <strong>{visibleItems.length}</strong> result{visibleItems.length === 1 ? "" : "s"} matching "
-              {searchQuery}"
+              {searchQuery}"{" "}
+              {aiFilterActive && (
+                <em style={{ marginLeft: 6, opacity: 0.85 }}>
+                  (Filtered by {deepAiResults ? deepAiEngine : "AI Semantic Engine"})
+                </em>
+              )}
             </span>
-            <button type="button" onClick={() => setSearchQuery("")}>
+            <button
+              type="button"
+              onClick={() => {
+                setSearchQuery("");
+                setDeepAiResults(null);
+              }}
+            >
               Clear search ×
             </button>
           </div>
@@ -528,12 +665,12 @@ function App() {
         {smartFilter !== "none" && (
           <div className="active-filter-banner">
             <span>
-              Showing collection:{" "}
+              Showing AI collection:{" "}
               <strong>
                 {smartFilter === "attention"
-                  ? "Needs attention"
+                  ? "Needs attention (AI Urgency & Tasks)"
                   : smartFilter === "saved"
-                  ? "Saved for later"
+                  ? "Saved for later (AI References & Receipts)"
                   : "Processed today"}
               </strong>{" "}
               ({visibleItems.length} items)
@@ -562,6 +699,7 @@ function App() {
             stats={stats}
             metrics={currentMetrics}
             items={visibleItems}
+            aiReasons={itemAiReasons}
             status={status}
             timeframe={timeframe}
             onTimeframeChange={setTimeframe}
@@ -671,6 +809,7 @@ function Dashboard({
   stats,
   metrics,
   items,
+  aiReasons,
   status,
   timeframe,
   onTimeframeChange,
@@ -685,6 +824,7 @@ function Dashboard({
   stats: DashboardStats;
   metrics: { total: number; tasks: number; events: number; receipts: number };
   items: StashItem[];
+  aiReasons: Record<string, string>;
   status: RuntimeStatus | null;
   timeframe: Timeframe;
   onTimeframeChange: (t: Timeframe) => void;
@@ -729,17 +869,21 @@ function Dashboard({
           </div>
 
           {items.length ? (
-            items.map((item, idx) => (
-              <StashCard
-                key={`${item.title}-${item.time || idx}`}
-                item={item}
-                onPreview={onPreview}
-                onOpenFolder={onOpenFolder}
-                onDelete={onDelete}
-                onSearchSimilar={onSearchSimilar}
-                onNotice={onNotice}
-              />
-            ))
+            items.map((item, idx) => {
+              const itemKey = `${item.title}-${item.time}`;
+              return (
+                <StashCard
+                  key={`${item.title}-${item.time || idx}`}
+                  item={item}
+                  aiReason={aiReasons[itemKey]}
+                  onPreview={onPreview}
+                  onOpenFolder={onOpenFolder}
+                  onDelete={onDelete}
+                  onSearchSimilar={onSearchSimilar}
+                  onNotice={onNotice}
+                />
+              );
+            })
           ) : (
             <p className="muted empty-state">No screenshots match your current filter or timeframe.</p>
           )}
@@ -785,6 +929,7 @@ function Metric({ label, value, delta }: { label: string; value: number; delta: 
 
 function StashCard({
   item,
+  aiReason,
   onPreview,
   onOpenFolder,
   onDelete,
@@ -792,6 +937,7 @@ function StashCard({
   onNotice
 }: {
   item: StashItem;
+  aiReason?: string;
   onPreview: (item: StashItem) => void;
   onOpenFolder: (path: string) => void;
   onDelete: (item: StashItem) => void;
@@ -855,6 +1001,11 @@ function StashCard({
           <span className={`tag ${item.accent}`}>{item.category}</span>
           {item.amount && <span className="cal-card-amount">{item.amount}</span>}
         </div>
+        {aiReason && (
+          <div className="ai-reason-pill">
+            <span>✦ AI:</span> {aiReason}
+          </div>
+        )}
         <p>{item.summary}</p>
         {item.tasks && item.tasks.length > 0 && (
           <div className="cal-task-checklist" style={{ margin: "4px 0 6px" }}>
@@ -893,7 +1044,7 @@ function StashCard({
                 onPreview(item);
               }}
             >
-              <span>👁</span> View full screenshot
+              View full screenshot
             </button>
 
             {item.file_path && (
@@ -906,7 +1057,7 @@ function StashCard({
                   onNotice(`Opened folder for ${item.file_name || item.title}`);
                 }}
               >
-                <span>📁</span> Show in folder
+                Show in folder
               </button>
             )}
 
@@ -919,7 +1070,7 @@ function StashCard({
                 onNotice("Summary copied to clipboard!");
               }}
             >
-              <span>📋</span> Copy summary
+              Copy summary
             </button>
 
             {item.raw_ocr_text && (
@@ -932,7 +1083,7 @@ function StashCard({
                   onNotice("OCR text copied to clipboard!");
                 }}
               >
-                <span>📝</span> Copy OCR text
+                Copy OCR text
               </button>
             )}
 
@@ -944,7 +1095,7 @@ function StashCard({
                 onSearchSimilar(item.title);
               }}
             >
-              <span>🔍</span> Search related
+              Search related
             </button>
 
             <button
@@ -955,7 +1106,7 @@ function StashCard({
                 onDelete(item);
               }}
             >
-              <span>🗑</span> Remove from stash
+              Remove from stash
             </button>
           </div>
         )}
@@ -1005,7 +1156,7 @@ function LightboxModal({
                   onNotice(`Opened in Explorer: ${item.file_name || item.title}`);
                 }}
               >
-                📁 Show in Folder
+                Show in Folder
               </button>
             )}
 
@@ -1017,7 +1168,7 @@ function LightboxModal({
                 onNotice("Summary copied to clipboard!");
               }}
             >
-              📋 Copy Summary
+              Copy Summary
             </button>
 
             <button type="button" className="icon-close-btn" onClick={onClose} title="Close (Esc)">
