@@ -1,5 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
-import { getConfig, getDashboardStats, getRecentItems, getRuntimeStatus, runPipelineCommand, saveConfig } from "./api";
+import {
+  deleteScreenshot,
+  getConfig,
+  getDashboardStats,
+  getRecentItems,
+  getRuntimeStatus,
+  getScreenshotAssetUrl,
+  openFileInFolder,
+  runPipelineCommand,
+  saveConfig
+} from "./api";
 import type { AppConfig, DashboardStats, RuntimeStatus, StashItem } from "./types";
 import { MonthlyCalendar } from "./Calendar";
 
@@ -23,6 +33,17 @@ const defaultConfig: AppConfig = {
 };
 const emptyStats: DashboardStats = { total: 0, tasks: 0, events: 0, receipts: 0, processed_today: 0 };
 
+type Timeframe = "today" | "7days" | "30days" | "month" | "all";
+const TIMEFRAME_LABELS: Record<Timeframe, string> = {
+  today: "Today",
+  "7days": "Last 7 days",
+  "30days": "Last 30 days",
+  month: "This month",
+  all: "All time"
+};
+
+type SmartFilter = "none" | "attention" | "saved" | "today";
+
 function App() {
   const [config, setConfig] = useState<AppConfig>(defaultConfig);
   const [status, setStatus] = useState<RuntimeStatus | null>(null);
@@ -34,10 +55,15 @@ function App() {
   const [notice, setNotice] = useState("");
   const [cloudStatus, setCloudStatus] = useState<"checking" | "connected" | "error" | "idle">("idle");
 
+  // New interactive states
+  const [searchQuery, setSearchQuery] = useState("");
+  const [timeframe, setTimeframe] = useState<Timeframe>("7days");
+  const [smartFilter, setSmartFilter] = useState<SmartFilter>("none");
+  const [lightboxItem, setLightboxItem] = useState<StashItem | null>(null);
+
   async function checkCloudConnection() {
     setCloudStatus("checking");
     const controller = new AbortController();
-    // Render can take longer than a few seconds to wake after idle time.
     const timer = setTimeout(() => controller.abort(), 35000);
     try {
       const res = await fetch("https://screenstash-cloudapi.onrender.com/health", {
@@ -148,10 +174,85 @@ function App() {
     }
   }
 
-  const visibleItems = useMemo(
-    () => (view === "tasks" ? items.filter((item) => item.category === "Task") : items),
-    [view, items]
-  );
+  async function handleDeleteItem(itemToDelete: StashItem) {
+    if (itemToDelete.id) {
+      await deleteScreenshot(itemToDelete.id);
+    }
+    setItems((prev) => prev.filter((i) => i.title !== itemToDelete.title || i.time !== itemToDelete.time));
+    setNotice(`Removed "${itemToDelete.title}" from your workspace.`);
+    refreshDashboard().catch(() => undefined);
+  }
+
+  // Smart collection counts
+  const needsAttentionCount = useMemo(() => items.filter((i) => i.category === "Task").length, [items]);
+  const savedForLaterCount = useMemo(() => items.filter((i) => i.category === "Reference").length, [items]);
+
+  // Combined Filtering Pipeline: Timeframe -> SmartFilter -> SearchQuery -> View
+  const visibleItems = useMemo(() => {
+    let list = items;
+
+    // 1. Timeframe filter
+    if (timeframe !== "all") {
+      const now = new Date();
+      let threshold = new Date();
+      if (timeframe === "today") {
+        threshold.setHours(0, 0, 0, 0);
+      } else if (timeframe === "7days") {
+        threshold.setDate(now.getDate() - 7);
+      } else if (timeframe === "30days") {
+        threshold.setDate(now.getDate() - 30);
+      } else if (timeframe === "month") {
+        threshold = new Date(now.getFullYear(), now.getMonth(), 1);
+      }
+
+      list = list.filter((item) => {
+        if (!item.time) return true;
+        const itemDate = new Date(item.time);
+        if (isNaN(itemDate.getTime())) return true;
+        return itemDate >= threshold;
+      });
+    }
+
+    // 2. Navigation View filter
+    if (view === "tasks") {
+      list = list.filter((item) => item.category === "Task");
+    }
+
+    // 3. Smart Collection filter
+    if (smartFilter === "attention") {
+      list = list.filter((item) => item.category === "Task");
+    } else if (smartFilter === "saved") {
+      list = list.filter((item) => item.category === "Reference");
+    } else if (smartFilter === "today") {
+      const todayStr = new Date().toISOString().slice(0, 10);
+      list = list.filter((item) => item.time && item.time.startsWith(todayStr));
+    }
+
+    // 4. Live Search Query filter
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim();
+      list = list.filter((item) => {
+        const titleMatch = item.title.toLowerCase().includes(q);
+        const summaryMatch = item.summary?.toLowerCase().includes(q);
+        const catMatch = item.category?.toLowerCase().includes(q);
+        const ocrMatch = item.raw_ocr_text?.toLowerCase().includes(q);
+        const tasksMatch = item.tasks?.some((t) => t.toLowerCase().includes(q));
+        const datesMatch = item.dates?.some((d) => d.toLowerCase().includes(q));
+        return titleMatch || summaryMatch || catMatch || ocrMatch || tasksMatch || datesMatch;
+      });
+    }
+
+    return list;
+  }, [items, timeframe, view, smartFilter, searchQuery]);
+
+  // Dynamic timeframe stats calculated from timeframe-filtered items
+  const currentMetrics = useMemo(() => {
+    const total = visibleItems.length;
+    const tasks = visibleItems.filter((i) => i.category === "Task").length;
+    const events = visibleItems.filter((i) => i.category === "Event").length;
+    const receipts = visibleItems.filter((i) => i.category === "Receipt").length;
+    return { total, tasks, events, receipts };
+  }, [visibleItems]);
 
   async function finishOnboarding() {
     const next = { ...config, onboarding_complete: true };
@@ -178,7 +279,6 @@ function App() {
     try {
       await saveConfig(next);
       if (screenshotFolderChanged) {
-        // The daemon re-reads the folder from config every ~2s, so it just has to be running.
         await runPipelineCommand("start").catch(() => undefined);
         const runtime = await getRuntimeStatus();
         if (runtime) setStatus(runtime);
@@ -214,22 +314,94 @@ function App() {
         </div>
         <p className="eyebrow">YOUR WORKSPACE</p>
         <nav>
-          <NavButton active={view === "overview"} icon="⌂" label="Overview" onClick={() => setView("overview")} />
-          <NavButton active={view === "tasks"} icon="✓" label="Tasks" badge={stats.tasks} onClick={() => setView("tasks")} />
-          <NavButton active={view === "calendar"} icon="□" label="Calendar" onClick={() => setView("calendar")} />
-          <NavButton active={false} icon="⌁" label="References" onClick={() => setNotice("References are available from the local screenshot records.")} />
-          <NavButton active={false} icon="▦" label="All screenshots" onClick={() => setNotice(`${stats.total} screenshot(s) are stored locally.`)} />
+          <NavButton
+            active={view === "overview" && smartFilter === "none"}
+            icon="⌂"
+            label="Overview"
+            onClick={() => {
+              setView("overview");
+              setSmartFilter("none");
+            }}
+          />
+          <NavButton
+            active={view === "tasks"}
+            icon="✓"
+            label="Tasks"
+            badge={stats.tasks}
+            onClick={() => {
+              setView("tasks");
+              setSmartFilter("none");
+            }}
+          />
+          <NavButton
+            active={view === "calendar"}
+            icon="□"
+            label="Calendar"
+            onClick={() => {
+              setView("calendar");
+              setSmartFilter("none");
+            }}
+          />
+          <NavButton
+            active={false}
+            icon="⌁"
+            label="References"
+            onClick={() => {
+              setView("overview");
+              setSmartFilter("saved");
+            }}
+          />
+          <NavButton
+            active={false}
+            icon="▦"
+            label="All screenshots"
+            onClick={() => {
+              setView("overview");
+              setTimeframe("all");
+              setSmartFilter("none");
+              setNotice(`${stats.total} total screenshot(s) are stored locally.`);
+            }}
+          />
         </nav>
+
         <p className="eyebrow smart-label">SMART COLLECTIONS</p>
-        <div className="smart-item">
-          <i className="dot peach" />Needs attention <span>0</span>
-        </div>
-        <div className="smart-item">
-          <i className="dot purple" />Saved for later <span>0</span>
-        </div>
-        <div className="smart-item">
-          <i className="dot green" />Processed today <span>{stats.processed_today}</span>
-        </div>
+        <button
+          className={`smart-item-btn ${smartFilter === "attention" ? "active" : ""}`}
+          onClick={() => {
+            setView("overview");
+            setSmartFilter((cur) => (cur === "attention" ? "none" : "attention"));
+          }}
+          title="Filter to tasks needing attention"
+        >
+          <i className="dot peach" />
+          <span>Needs attention</span>
+          <em>{needsAttentionCount}</em>
+        </button>
+        <button
+          className={`smart-item-btn ${smartFilter === "saved" ? "active" : ""}`}
+          onClick={() => {
+            setView("overview");
+            setSmartFilter((cur) => (cur === "saved" ? "none" : "saved"));
+          }}
+          title="Filter to references and saved items"
+        >
+          <i className="dot purple" />
+          <span>Saved for later</span>
+          <em>{savedForLaterCount}</em>
+        </button>
+        <button
+          className={`smart-item-btn ${smartFilter === "today" ? "active" : ""}`}
+          onClick={() => {
+            setView("overview");
+            setSmartFilter((cur) => (cur === "today" ? "none" : "today"));
+          }}
+          title="Filter to screenshots processed today"
+        >
+          <i className="dot green" />
+          <span>Processed today</span>
+          <em>{stats.processed_today}</em>
+        </button>
+
         <div className="sidebar-bottom">
           <div
             className={`privacy-card ${
@@ -312,19 +484,66 @@ function App() {
             </h1>
           </div>
           <div className="top-actions">
-            <button
-              className="icon-button"
-              onClick={() => setNotice("Search will index OCR text from the local database.")}
-            >
-              ⌕
-            </button>
+            <div className="search-box-wrapper">
+              <span className="search-icon">⌕</span>
+              <input
+                type="text"
+                className="search-input"
+                placeholder="Search screenshots, OCR, tasks…"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  className="search-clear-btn"
+                  onClick={() => setSearchQuery("")}
+                  title="Clear search"
+                >
+                  ×
+                </button>
+              )}
+            </div>
           </div>
         </header>
+
         {notice && (
           <div className="notice" onClick={() => setNotice("")}>
             {notice} <span>×</span>
           </div>
         )}
+
+        {searchQuery.trim() && (
+          <div className="search-results-chip">
+            <span>
+              Found <strong>{visibleItems.length}</strong> result{visibleItems.length === 1 ? "" : "s"} matching "
+              {searchQuery}"
+            </span>
+            <button type="button" onClick={() => setSearchQuery("")}>
+              Clear search ×
+            </button>
+          </div>
+        )}
+
+        {smartFilter !== "none" && (
+          <div className="active-filter-banner">
+            <span>
+              Showing collection:{" "}
+              <strong>
+                {smartFilter === "attention"
+                  ? "Needs attention"
+                  : smartFilter === "saved"
+                  ? "Saved for later"
+                  : "Processed today"}
+              </strong>{" "}
+              ({visibleItems.length} items)
+            </span>
+            <button type="button" className="clear-filter-btn" onClick={() => setSmartFilter("none")}>
+              Clear collection filter ×
+            </button>
+          </div>
+        )}
+
         {view === "settings" ? (
           <Settings
             config={config}
@@ -336,11 +555,35 @@ function App() {
             onSetupAi={handleSetupAi}
           />
         ) : view === "calendar" ? (
-          <MonthlyCalendar items={items} />
+          <MonthlyCalendar items={visibleItems} onPreview={(item) => setLightboxItem(item)} />
         ) : (
-          <Dashboard view={view} stats={stats} items={visibleItems} status={status} onRefresh={refreshDashboard} />
+          <Dashboard
+            view={view}
+            stats={stats}
+            metrics={currentMetrics}
+            items={visibleItems}
+            status={status}
+            timeframe={timeframe}
+            onTimeframeChange={setTimeframe}
+            onRefresh={refreshDashboard}
+            onPreview={(item) => setLightboxItem(item)}
+            onOpenFolder={openFileInFolder}
+            onDelete={handleDeleteItem}
+            onSearchSimilar={(q) => setSearchQuery(q)}
+            onNotice={setNotice}
+          />
         )}
       </main>
+
+      {lightboxItem && (
+        <LightboxModal
+          item={lightboxItem}
+          onClose={() => setLightboxItem(null)}
+          onOpenFolder={openFileInFolder}
+          onNotice={setNotice}
+        />
+      )}
+
       {onboarding && (
         <Onboarding config={config} setConfig={setConfig} onComplete={finishOnboarding} saving={saving} />
       )}
@@ -372,31 +615,100 @@ function NavButton({
   );
 }
 
+function TimeframeDropdown({
+  selected,
+  onChange
+}: {
+  selected: Timeframe;
+  onChange: (t: Timeframe) => void;
+}) {
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    const close = () => setOpen(false);
+    window.addEventListener("click", close);
+    return () => window.removeEventListener("click", close);
+  }, [open]);
+
+  return (
+    <div className="timeframe-container">
+      <button
+        type="button"
+        className="date-chip interactive"
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen((prev) => !prev);
+        }}
+      >
+        ◷ {TIMEFRAME_LABELS[selected]} ⌄
+      </button>
+
+      {open && (
+        <div className="timeframe-dropdown" onClick={(e) => e.stopPropagation()}>
+          {(Object.keys(TIMEFRAME_LABELS) as Timeframe[]).map((tf) => (
+            <button
+              key={tf}
+              type="button"
+              className={`timeframe-option ${selected === tf ? "active" : ""}`}
+              onClick={() => {
+                onChange(tf);
+                setOpen(false);
+              }}
+            >
+              <span>{TIMEFRAME_LABELS[tf]}</span>
+              {selected === tf && <span className="check">✓</span>}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Dashboard({
   view,
   stats,
+  metrics,
   items,
   status,
-  onRefresh
+  timeframe,
+  onTimeframeChange,
+  onRefresh,
+  onPreview,
+  onOpenFolder,
+  onDelete,
+  onSearchSimilar,
+  onNotice
 }: {
   view: string;
   stats: DashboardStats;
+  metrics: { total: number; tasks: number; events: number; receipts: number };
   items: StashItem[];
   status: RuntimeStatus | null;
+  timeframe: Timeframe;
+  onTimeframeChange: (t: Timeframe) => void;
   onRefresh: () => void;
+  onPreview: (item: StashItem) => void;
+  onOpenFolder: (path: string) => void;
+  onDelete: (item: StashItem) => void;
+  onSearchSimilar: (q: string) => void;
+  onNotice: (msg: string) => void;
 }) {
   return (
     <>
       <section className="hero-row">
         <p className="muted">Here’s what your screenshots surfaced while you were away.</p>
-        <div className="date-chip">◷ Last 7 days　⌄</div>
+        <TimeframeDropdown selected={timeframe} onChange={onTimeframeChange} />
       </section>
+
       <section className="metric-grid">
-        <Metric label="Captured" value={stats.total} delta="local screenshots" />
-        <Metric label="Tasks found" value={stats.tasks} delta="from your stash" />
-        <Metric label="Events" value={stats.events} delta="from your stash" />
-        <Metric label="Receipts" value={stats.receipts} delta="from your stash" />
+        <Metric label="Captured" value={metrics.total} delta={`${TIMEFRAME_LABELS[timeframe].toLowerCase()}`} />
+        <Metric label="Tasks found" value={metrics.tasks} delta="from your stash" />
+        <Metric label="Events" value={metrics.events} delta="from your stash" />
+        <Metric label="Receipts" value={metrics.receipts} delta="from your stash" />
       </section>
+
       <section className="content-grid">
         <div className="panel">
           <div className="panel-heading">
@@ -404,14 +716,35 @@ function Dashboard({
               <p className="eyebrow">RECENT ACTIVITY</p>
               <h2>{view === "calendar" ? "Upcoming from screenshots" : "Your latest stash"}</h2>
             </div>
-            <button className="text-button">View all →</button>
+            <button
+              type="button"
+              className="text-button"
+              onClick={() => {
+                onTimeframeChange("all");
+                onNotice("Showing all historical screenshot records.");
+              }}
+            >
+              View all ({items.length}) →
+            </button>
           </div>
+
           {items.length ? (
-            items.map((item) => <StashCard key={item.title} item={item} />)
+            items.map((item, idx) => (
+              <StashCard
+                key={`${item.title}-${item.time || idx}`}
+                item={item}
+                onPreview={onPreview}
+                onOpenFolder={onOpenFolder}
+                onDelete={onDelete}
+                onSearchSimilar={onSearchSimilar}
+                onNotice={onNotice}
+              />
+            ))
           ) : (
-            <p className="muted empty-state">No screenshots have been organized yet.</p>
+            <p className="muted empty-state">No screenshots match your current filter or timeframe.</p>
           )}
         </div>
+
         <div className="panel digest">
           <p className="eyebrow">LOCAL STATUS</p>
           <h2>A private workspace.</h2>
@@ -431,7 +764,7 @@ function Dashboard({
             <span>Active AI engine</span>
             <strong>{status?.model_ready ? "Gemma 3 (Neural)" : "Built-in Offline Engine"}</strong>
           </div>
-          <button className="secondary-button" onClick={onRefresh}>
+          <button type="button" className="secondary-button" onClick={onRefresh}>
             Refresh status
           </button>
         </div>
@@ -450,22 +783,291 @@ function Metric({ label, value, delta }: { label: string; value: number; delta: 
   );
 }
 
-function StashCard({ item }: { item: StashItem }) {
+function StashCard({
+  item,
+  onPreview,
+  onOpenFolder,
+  onDelete,
+  onSearchSimilar,
+  onNotice
+}: {
+  item: StashItem;
+  onPreview: (item: StashItem) => void;
+  onOpenFolder: (path: string) => void;
+  onDelete: (item: StashItem) => void;
+  onSearchSimilar: (q: string) => void;
+  onNotice: (msg: string) => void;
+}) {
+  const [imgError, setImgError] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  const assetUrl = useMemo(() => getScreenshotAssetUrl(item.file_path), [item.file_path]);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const close = () => setMenuOpen(false);
+    window.addEventListener("click", close);
+    return () => window.removeEventListener("click", close);
+  }, [menuOpen]);
+
   return (
     <article className="stash-card">
-      <div className={`card-icon ${item.accent}`}>
-        {item.category === "Task" ? "✓" : item.category === "Event" ? "□" : "▤"}
+      {/* Thumbnail + Hover Preview */}
+      <div
+        className="stash-thumb-container"
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+        onClick={() => onPreview(item)}
+        title="Click to expand screenshot"
+      >
+        {assetUrl && !imgError ? (
+          <img
+            src={assetUrl}
+            alt={item.title}
+            className="stash-thumb-img"
+            onError={() => setImgError(true)}
+          />
+        ) : (
+          <div className={`card-icon-placeholder ${item.accent}`}>
+            {item.category === "Task" ? "✓" : item.category === "Event" ? "□" : item.category === "Receipt" ? "▤" : "✦"}
+          </div>
+        )}
+
+        {/* Floating Hover Popover */}
+        {hovered && assetUrl && !imgError && (
+          <div className="stash-hover-popover" onClick={(e) => e.stopPropagation()}>
+            <div className="hover-popover-preview">
+              <img src={assetUrl} alt={item.title} className="hover-popover-img" />
+            </div>
+            <div className="hover-popover-info">
+              <strong>{item.file_name || item.title}</strong>
+              <small>Click to open ↗</small>
+            </div>
+          </div>
+        )}
       </div>
+
+      {/* Card Content Body */}
       <div className="card-body">
         <div className="card-title">
           <h3>{item.title}</h3>
           <span className={`tag ${item.accent}`}>{item.category}</span>
+          {item.amount && <span className="cal-card-amount">{item.amount}</span>}
         </div>
         <p>{item.summary}</p>
+        {item.tasks && item.tasks.length > 0 && (
+          <div className="cal-task-checklist" style={{ margin: "4px 0 6px" }}>
+            <span className="cal-checklist-label">Tasks:</span>
+            {item.tasks.slice(0, 2).map((t, idx) => (
+              <span key={idx} style={{ fontSize: "11px", color: "#444" }}>
+                • {t}
+              </span>
+            ))}
+          </div>
+        )}
         <small>{item.time}</small>
       </div>
-      <button className="more">•••</button>
+
+      {/* Options Menu Button (•••) */}
+      <div className="card-actions-wrapper">
+        <button
+          type="button"
+          className={`more-btn ${menuOpen ? "active" : ""}`}
+          onClick={(e) => {
+            e.stopPropagation();
+            setMenuOpen((prev) => !prev);
+          }}
+          title="Screenshot options"
+        >
+          •••
+        </button>
+
+        {menuOpen && (
+          <div className="card-dropdown-menu" onClick={(e) => e.stopPropagation()}>
+            <button
+              type="button"
+              className="menu-item"
+              onClick={() => {
+                setMenuOpen(false);
+                onPreview(item);
+              }}
+            >
+              <span>👁</span> View full screenshot
+            </button>
+
+            {item.file_path && (
+              <button
+                type="button"
+                className="menu-item"
+                onClick={() => {
+                  setMenuOpen(false);
+                  onOpenFolder(item.file_path!);
+                  onNotice(`Opened folder for ${item.file_name || item.title}`);
+                }}
+              >
+                <span>📁</span> Show in folder
+              </button>
+            )}
+
+            <button
+              type="button"
+              className="menu-item"
+              onClick={() => {
+                setMenuOpen(false);
+                navigator.clipboard.writeText(item.summary || item.title);
+                onNotice("Summary copied to clipboard!");
+              }}
+            >
+              <span>📋</span> Copy summary
+            </button>
+
+            {item.raw_ocr_text && (
+              <button
+                type="button"
+                className="menu-item"
+                onClick={() => {
+                  setMenuOpen(false);
+                  navigator.clipboard.writeText(item.raw_ocr_text!);
+                  onNotice("OCR text copied to clipboard!");
+                }}
+              >
+                <span>📝</span> Copy OCR text
+              </button>
+            )}
+
+            <button
+              type="button"
+              className="menu-item"
+              onClick={() => {
+                setMenuOpen(false);
+                onSearchSimilar(item.title);
+              }}
+            >
+              <span>🔍</span> Search related
+            </button>
+
+            <button
+              type="button"
+              className="menu-item danger"
+              onClick={() => {
+                setMenuOpen(false);
+                onDelete(item);
+              }}
+            >
+              <span>🗑</span> Remove from stash
+            </button>
+          </div>
+        )}
+      </div>
     </article>
+  );
+}
+
+function LightboxModal({
+  item,
+  onClose,
+  onOpenFolder,
+  onNotice
+}: {
+  item: StashItem;
+  onClose: () => void;
+  onOpenFolder: (path: string) => void;
+  onNotice: (msg: string) => void;
+}) {
+  const assetUrl = useMemo(() => getScreenshotAssetUrl(item.file_path), [item.file_path]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <div className="lightbox-backdrop" onClick={onClose}>
+      <div className="lightbox-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="lightbox-header">
+          <div className="lightbox-header-info">
+            <span className={`tag ${item.accent}`}>{item.category}</span>
+            <h3>{item.title}</h3>
+            {item.time && <small style={{ color: "#888" }}>{item.time.replace("T", " ").slice(0, 19)}</small>}
+          </div>
+
+          <div className="lightbox-header-actions">
+            {item.file_path && (
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => {
+                  onOpenFolder(item.file_path!);
+                  onNotice(`Opened in Explorer: ${item.file_name || item.title}`);
+                }}
+              >
+                📁 Show in Folder
+              </button>
+            )}
+
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() => {
+                navigator.clipboard.writeText(item.summary || item.title);
+                onNotice("Summary copied to clipboard!");
+              }}
+            >
+              📋 Copy Summary
+            </button>
+
+            <button type="button" className="icon-close-btn" onClick={onClose} title="Close (Esc)">
+              ✕
+            </button>
+          </div>
+        </div>
+
+        <div className="lightbox-body">
+          {assetUrl ? (
+            <img src={assetUrl} alt={item.title} className="lightbox-image" />
+          ) : (
+            <div className="lightbox-fallback">
+              <p>Image preview unavailable for this item.</p>
+              {item.file_path && <small style={{ color: "#aaa" }}>{item.file_path}</small>}
+            </div>
+          )}
+        </div>
+
+        <div className="lightbox-footer">
+          <p className="lightbox-summary">{item.summary}</p>
+          {item.tasks && item.tasks.length > 0 && (
+            <div className="lightbox-tasks">
+              <strong>Extracted Tasks:</strong>
+              <ul>
+                {item.tasks.map((t, idx) => (
+                  <li key={idx}>{t}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {item.raw_ocr_text && (
+            <details style={{ marginTop: "8px", fontSize: "11px", color: "#777" }}>
+              <summary style={{ cursor: "pointer", fontWeight: 600 }}>Show Raw OCR Text</summary>
+              <pre
+                style={{
+                  background: "#f4f3ed",
+                  padding: "8px",
+                  borderRadius: "6px",
+                  whiteSpace: "pre-wrap",
+                  marginTop: "4px"
+                }}
+              >
+                {item.raw_ocr_text}
+              </pre>
+            </details>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -629,6 +1231,7 @@ function Settings({
               </div>
               {isOllamaReadyToPull && (
                 <button
+                  type="button"
                   className="primary-button"
                   style={{ alignSelf: "flex-start" }}
                   onClick={onSetupAi}
@@ -847,6 +1450,7 @@ function Onboarding({
               ))}
             </div>
             <button
+              type="button"
               className="primary-button"
               disabled={saving || (step === 2 && !config.process_locally)}
               onClick={() => (step < 2 ? setStep(step + 1) : onComplete())}

@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import type { Category, StashItem } from "./types";
+import { getScreenshotAssetUrl } from "./api";
 
 const DAYS_OF_WEEK = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const MONTH_NAMES = [
@@ -67,7 +68,7 @@ function parseItemDates(item: StashItem): string[] {
   return Array.from(dates);
 }
 
-export function MonthlyCalendar({ items }: { items: StashItem[] }) {
+export function MonthlyCalendar({ items, onPreview }: { items: StashItem[]; onPreview?: (item: StashItem) => void }) {
   const today = useMemo(() => new Date(), []);
   const todayKey = useMemo(() => formatDateKey(today), [today]);
 
@@ -397,9 +398,26 @@ export function MonthlyCalendar({ items }: { items: StashItem[] }) {
                   return (
                     <article key={itemKey} className="cal-agenda-card">
                       <div className="cal-card-top">
-                        <span className={`tag ${item.accent}`}>
-                          {item.category === "Event" ? "□ Event" : item.category === "Task" ? "✓ Task" : item.category === "Receipt" ? "▤ Receipt" : "✦ Reference"}
-                        </span>
+                        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                          {item.file_path && (
+                            <div
+                              className="cal-mini-thumb"
+                              onClick={() => onPreview?.(item)}
+                              title="Click to view full screenshot"
+                              style={{ width: "36px", height: "36px", borderRadius: "6px", overflow: "hidden", cursor: "pointer", border: "1px solid #dedcd4", background: "#f5f4ee", flexShrink: 0 }}
+                            >
+                              <img
+                                src={getScreenshotAssetUrl(item.file_path) || ""}
+                                alt={item.title}
+                                style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                                onError={(e) => { (e.target as HTMLElement).style.display = "none"; }}
+                              />
+                            </div>
+                          )}
+                          <span className={`tag ${item.accent}`}>
+                            {item.category === "Event" ? "□ Event" : item.category === "Task" ? "✓ Task" : item.category === "Receipt" ? "▤ Receipt" : "✦ Reference"}
+                          </span>
+                        </div>
                         {item.time && (
                           <span className="cal-time-hint">
                             {item.time.includes("T") ? item.time.split("T")[1].slice(0, 5) : item.time.slice(11, 16) || "Organized"}

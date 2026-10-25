@@ -24,11 +24,19 @@ pub struct RuntimeStatus { service_running: bool, python_available: bool, ollama
 pub struct DashboardStats { total: u32, tasks: u32, events: u32, receipts: u32, processed_today: u32 }
 #[derive(Debug, Serialize)]
 pub struct StashItem {
+    #[serde(default)]
+    pub id: Option<i64>,
     pub title: String,
     pub category: String,
     pub summary: String,
     pub time: String,
     pub accent: String,
+    #[serde(default)]
+    pub file_path: Option<String>,
+    #[serde(default)]
+    pub file_name: Option<String>,
+    #[serde(default)]
+    pub raw_ocr_text: Option<String>,
     #[serde(default)]
     pub dates: Vec<String>,
     #[serde(default)]
@@ -128,15 +136,19 @@ fn get_dashboard_stats() -> DashboardStats {
 #[tauri::command]
 fn get_recent_items() -> Vec<StashItem> {
     let Ok(conn) = Connection::open(database_path()) else { return Vec::new(); };
-    let Ok(mut statement) = conn.prepare("SELECT title, category, summary, created_at, dates_json, tasks_json, amount FROM screenshots ORDER BY created_at DESC LIMIT 100") else { return Vec::new(); };
+    let Ok(mut statement) = conn.prepare("SELECT id, title, category, summary, created_at, file_path, file_name, raw_ocr_text, dates_json, tasks_json, amount FROM screenshots ORDER BY created_at DESC LIMIT 100") else { return Vec::new(); };
     let Ok(rows) = statement.query_map([], |row| {
-        let title: String = row.get(0)?;
-        let category: String = row.get(1)?;
-        let summary: String = row.get(2)?;
-        let time: String = row.get(3)?;
-        let dates_raw: Option<String> = row.get(4).ok();
-        let tasks_raw: Option<String> = row.get(5).ok();
-        let amount: Option<String> = row.get(6).ok();
+        let id: Option<i64> = row.get(0).ok();
+        let title: String = row.get(1)?;
+        let category: String = row.get(2)?;
+        let summary: String = row.get(3)?;
+        let time: String = row.get(4)?;
+        let file_path: Option<String> = row.get(5).ok();
+        let file_name: Option<String> = row.get(6).ok();
+        let raw_ocr_text: Option<String> = row.get(7).ok();
+        let dates_raw: Option<String> = row.get(8).ok();
+        let tasks_raw: Option<String> = row.get(9).ok();
+        let amount: Option<String> = row.get(10).ok();
         let dates: Vec<String> = dates_raw.and_then(|r| serde_json::from_str(&r).ok()).unwrap_or_default();
         let tasks: Vec<String> = tasks_raw.and_then(|r| serde_json::from_str(&r).ok()).unwrap_or_default();
         let accent = match category.as_str() {
@@ -145,9 +157,38 @@ fn get_recent_items() -> Vec<StashItem> {
             "Receipt" => "green",
             _ => "lime",
         }.to_string();
-        Ok(StashItem { title, category, summary, time, accent, dates, tasks, amount })
+        Ok(StashItem { id, title, category, summary, time, accent, file_path, file_name, raw_ocr_text, dates, tasks, amount })
     }) else { return Vec::new(); };
     rows.filter_map(Result::ok).collect()
+}
+
+#[tauri::command]
+fn open_file_in_folder(path: String) -> Result<(), String> {
+    if path.is_empty() { return Err("Path is empty".into()); }
+    let p = PathBuf::from(&path);
+    if !p.exists() { return Err("File does not exist".into()); }
+    #[cfg(target_os = "windows")]
+    {
+        let _ = Command::new("explorer").args(["/select,", &path]).spawn().map_err(|e| e.to_string())?;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let _ = Command::new("open").args(["-R", &path]).spawn().map_err(|e| e.to_string())?;
+    }
+    #[cfg(target_os = "linux")]
+    {
+        if let Some(parent) = p.parent() {
+            let _ = Command::new("xdg-open").arg(parent).spawn().map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn delete_screenshot_item(id: i64) -> Result<(), String> {
+    let conn = Connection::open(database_path()).map_err(|e| e.to_string())?;
+    conn.execute("DELETE FROM screenshots WHERE id = ?1", [id]).map_err(|e| e.to_string())?;
+    Ok(())
 }
 #[tauri::command]
 fn run_pipeline_command(app: tauri::AppHandle, command: String) -> Result<String, String> {
@@ -168,4 +209,4 @@ fn run_pipeline_command(app: tauri::AppHandle, command: String) -> Result<String
         Err(String::from_utf8_lossy(&output.stderr).to_string())
     }
 }
-pub fn run() { tauri::Builder::default().invoke_handler(tauri::generate_handler![get_config, save_config, get_runtime_status, get_dashboard_stats, get_recent_items, run_pipeline_command]).setup(|app| { let _ = app.handle(); Ok(()) }).run(tauri::generate_context!()).expect("error while running ScreenStash"); }
+pub fn run() { tauri::Builder::default().invoke_handler(tauri::generate_handler![get_config, save_config, get_runtime_status, get_dashboard_stats, get_recent_items, run_pipeline_command, open_file_in_folder, delete_screenshot_item]).setup(|app| { let _ = app.handle(); Ok(()) }).run(tauri::generate_context!()).expect("error while running ScreenStash"); }
