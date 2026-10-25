@@ -21,7 +21,7 @@ fn default_ai_provider() -> String { "offline".into() }
 #[derive(Debug, Serialize)]
 pub struct RuntimeStatus { service_running: bool, python_available: bool, ollama_available: bool, model_ready: bool, watched_folder: String, app_data_dir: String }
 #[derive(Debug, Serialize)]
-pub struct DashboardStats { total: u32, tasks: u32, events: u32, receipts: u32 }
+pub struct DashboardStats { total: u32, tasks: u32, events: u32, receipts: u32, processed_today: u32 }
 #[derive(Debug, Serialize)]
 pub struct StashItem { title: String, category: String, summary: String, time: String, accent: String }
 fn app_data_dir() -> PathBuf {
@@ -62,11 +62,29 @@ fn validate_config(config: &AppConfig) -> Result<(), String> {
     Ok(())
 }
 #[tauri::command] fn save_config(config: AppConfig) -> Result<(), String> { validate_config(&config)?; let path = config_path(); fs::create_dir_all(path.parent().unwrap_or(Path::new("."))).map_err(|e| e.to_string())?; fs::write(path, serde_json::to_string_pretty(&config).map_err(|e| e.to_string())?).map_err(|e| e.to_string()) }
+fn pipeline_process(app: &tauri::AppHandle, command: &str) -> Command {
+    let sidecar_name = if cfg!(windows) { "screenstash-sidecar.exe" } else { "screenstash-sidecar" };
+    let bundled_sidecar = app.path().resource_dir()
+        .ok()
+        .map(|dir| dir.join(sidecar_name))
+        .filter(|path| path.exists());
+    if let Some(sidecar) = bundled_sidecar {
+        let mut process = Command::new(sidecar);
+        process.arg(command);
+        process
+    } else {
+        let mut process = Command::new(python_executable());
+        process.current_dir(project_root()).args(["screenstash.py", command]);
+        process
+    }
+}
 #[tauri::command]
-fn get_runtime_status() -> RuntimeStatus {
+fn get_runtime_status(app: tauri::AppHandle) -> RuntimeStatus {
     let config = read_config();
-    let pid_file = app_data_dir().join("screenstash_daemon.pid");
-    let service_running = pid_file.exists();
+    // Ask the Python sidecar to validate the PID and its command line. A PID
+    // file by itself can outlive a crashed watcher and must not be treated as
+    // proof that screenshots are being monitored.
+    let service_running = pipeline_process(&app, "status").output().map(|output| output.status.success()).unwrap_or(false);
     let ollama_available = Command::new("ollama").arg("--version").output().is_ok();
     let model_ready = if ollama_available {
         if let Ok(output) = Command::new("ollama").arg("list").output() {
@@ -89,10 +107,11 @@ fn get_runtime_status() -> RuntimeStatus {
 }
 #[tauri::command]
 fn get_dashboard_stats() -> DashboardStats {
-    let Ok(conn) = Connection::open(database_path()) else { return DashboardStats { total: 0, tasks: 0, events: 0, receipts: 0 }; };
+    let Ok(conn) = Connection::open(database_path()) else { return DashboardStats { total: 0, tasks: 0, events: 0, receipts: 0, processed_today: 0 }; };
     let total = conn.query_row("SELECT COUNT(*) FROM screenshots", [], |row| row.get::<_, u32>(0)).unwrap_or(0);
     let count = |category: &str| conn.query_row("SELECT COUNT(*) FROM screenshots WHERE status = 'PROCESSED' AND category = ?1", [category], |row| row.get::<_, u32>(0)).unwrap_or(0);
-    DashboardStats { total, tasks: count("Task"), events: count("Event"), receipts: count("Receipt") }
+    let processed_today = conn.query_row("SELECT COUNT(*) FROM screenshots WHERE status = 'PROCESSED' AND date(processed_at, 'localtime') = date('now', 'localtime')", [], |row| row.get::<_, u32>(0)).unwrap_or(0);
+    DashboardStats { total, tasks: count("Task"), events: count("Event"), receipts: count("Receipt"), processed_today }
 }
 #[tauri::command]
 fn get_recent_items() -> Vec<StashItem> {
@@ -115,20 +134,7 @@ fn run_pipeline_command(app: tauri::AppHandle, command: String) -> Result<String
     if !allowed.contains(&command.as_str()) {
         return Err("Unsupported pipeline command".into());
     }
-    let sidecar_name = if cfg!(windows) { "screenstash-sidecar.exe" } else { "screenstash-sidecar" };
-    let bundled_sidecar = app.path().resource_dir()
-        .ok()
-        .map(|dir| dir.join(sidecar_name))
-        .filter(|path| path.exists());
-    let mut process = if let Some(sidecar) = bundled_sidecar {
-        let mut cmd = Command::new(sidecar);
-        cmd.arg(&command);
-        cmd
-    } else {
-        let mut cmd = Command::new(python_executable());
-        cmd.current_dir(project_root()).args(["screenstash.py", &command]);
-        cmd
-    };
+    let mut process = pipeline_process(&app, &command);
     if command == "start" {
         process.spawn().map_err(|e| e.to_string())?;
         return Ok("Background watcher started.".into());

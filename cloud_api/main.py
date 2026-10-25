@@ -135,9 +135,11 @@ async def reject_oversized_requests(request: Request, call_next):
     return await call_next(request)
 
 
+@app.get("/")
 @app.get("/health")
-def health() -> dict[str, str]:
-    return {"status": "ok"}
+def health() -> dict[str, str | bool]:
+    """Service and Gemini-readiness probe for Render and external uptime checks."""
+    return {"status": "ok", "gemini_configured": bool(os.environ.get("GEMINI_API_KEY"))}
 
 
 @app.post("/v1/extractions", response_model=ExtractionResponse)

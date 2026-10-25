@@ -57,7 +57,7 @@ def start_service():
         target = str(Path(__file__).parent / "background_service.py")
         subprocess.Popen([sys.executable, target], cwd=str(Path(__file__).parent), close_fds=True)
 
-    print("[✓] Service started in background. New screenshots will trigger 'ScreenStash Saved' popups.")
+    print("[OK] Service started in background. New screenshots will trigger 'ScreenStash Saved' popups.")
 
 
 def setup_ai():
@@ -77,7 +77,7 @@ def setup_ai():
         print("[!] Ollama is not installed or is not on PATH. Install Ollama, then run this command again.")
         return
     if result_code == 0:
-        print("[✓] Local AI model is ready. Screenshots will be processed on this device.")
+        print("[OK] Local AI model is ready. Screenshots will be processed on this device.")
     else:
         print("[!] Ollama could not download the model. The offline fallback remains available.")
 
@@ -95,7 +95,7 @@ def main():
         start_service()
     elif cmd == "stop":
         if stop_running_daemon():
-            print("[✓] ScreenStash background service stopped.")
+            print("[OK] ScreenStash background service stopped.")
         else:
             print("[*] ScreenStash background service is not currently running.")
     elif cmd == "status":
@@ -103,7 +103,7 @@ def main():
     elif cmd == "scan":
         print("[*] Scanning screenshot directory...")
         count = scan_existing_screenshots()
-        print(f"[✓] Processed {count} new screenshot(s).")
+        print(f"[OK] Processed {count} new screenshot(s).")
     else:
         print(f"[!] Unknown command '{cmd}'. Available commands: setup-ai, start, stop, status, scan")
 

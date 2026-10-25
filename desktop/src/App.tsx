@@ -4,7 +4,7 @@ import type { AppConfig, DashboardStats, RuntimeStatus, StashItem } from "./type
 
 const CLOUD_API_URL = "https://screenstash-cloudapi.onrender.com";
 const defaultConfig: AppConfig = { screenshot_dir: "Detecting your Screenshots folder…", ollama_url: "http://localhost:11434", ollama_model: "gemma3:4b", tesseract_cmd: "tesseract", auto_process_new_screenshots: true, enable_fallback_heuristic_ai: true, theme: "light", onboarding_complete: false, process_locally: true, start_at_login: false, notify_on_results: true, ai_provider: "offline", cloud_api_url: CLOUD_API_URL, cloud_consent: false, cloud_installation_id: "" };
-const emptyStats: DashboardStats = { total: 0, tasks: 0, events: 0, receipts: 0 };
+const emptyStats: DashboardStats = { total: 0, tasks: 0, events: 0, receipts: 0, processed_today: 0 };
 
 function App() {
   const [config, setConfig] = useState<AppConfig>(defaultConfig);
@@ -18,21 +18,24 @@ function App() {
   const [cloudStatus, setCloudStatus] = useState<"checking" | "connected" | "error" | "idle">("idle");
   async function checkCloudConnection() {
     setCloudStatus("checking");
+    const controller = new AbortController();
+    // Render can take longer than a few seconds to wake after idle time.
+    const timer = setTimeout(() => controller.abort(), 35000);
     try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 7000);
       const res = await fetch("https://screenstash-cloudapi.onrender.com/health", {
         method: "GET",
         signal: controller.signal
       });
-      clearTimeout(timer);
-      if (res.ok) {
+      const health = await res.json() as { status?: string; gemini_configured?: boolean };
+      if (res.ok && health.status === "ok" && health.gemini_configured !== false) {
         setCloudStatus("connected");
       } else {
         setCloudStatus("error");
       }
     } catch {
       setCloudStatus("error");
+    } finally {
+      clearTimeout(timer);
     }
   }
   useEffect(() => {
@@ -42,7 +45,7 @@ function App() {
       setCloudStatus("idle");
     }
   }, [config.ai_provider]);
-  useEffect(() => { Promise.all([getConfig(), getRuntimeStatus(), getDashboardStats(), getRecentItems()]).then(([loaded, runtime, loadedStats, loadedItems]) => { if (loaded) { setConfig(loaded); setOnboarding(!loaded.onboarding_complete); } setStatus(runtime); if (loadedStats) setStats(loadedStats); setItems(loadedItems); }).catch(() => setNotice("Running in preview mode — connect the Python sidecar to load live data.")); }, []);
+  useEffect(() => { let cancelled = false; Promise.all([getConfig(), getRuntimeStatus(), getDashboardStats(), getRecentItems()]).then(async ([loaded, runtime, loadedStats, loadedItems]) => { if (cancelled) return; if (loaded) { setConfig(loaded); setOnboarding(!loaded.onboarding_complete); } setStatus(runtime); if (loadedStats) setStats(loadedStats); setItems(loadedItems); if (loaded?.onboarding_complete && !runtime?.service_running) { try { await runPipelineCommand("start"); await new Promise((resolve) => window.setTimeout(resolve, 750)); if (!cancelled) { const recovered = await getRuntimeStatus(); setStatus(recovered); setNotice("Screenshot watcher restarted."); } } catch { if (!cancelled) setNotice("The screenshot watcher could not start. Check the selected folder and restart ScreenStash."); } } }).catch(() => setNotice("Running in preview mode — connect the Python sidecar to load live data.")); return () => { cancelled = true; }; }, []);
   const visibleItems = useMemo(() => view === "tasks" ? items.filter((item) => item.category === "Task") : items, [view, items]);
   async function finishOnboarding() { const next = { ...config, onboarding_complete: true }; setConfig(next); setOnboarding(false); setSaving(true); try { await saveConfig(next); await runPipelineCommand("start"); setNotice("ScreenStash is ready and watching locally."); } catch { setNotice("Saved locally. The Python watcher will start when the sidecar is available."); } finally { setSaving(false); } }
   async function updateConfig(patch: Partial<AppConfig>) {
@@ -84,7 +87,7 @@ function App() {
   </div>;
 }
 function NavButton({ active, icon, label, badge, onClick }: { active: boolean; icon: string; label: string; badge?: number; onClick: () => void }) { return <button className={`nav-button ${active ? "active" : ""}`} onClick={onClick}><span><b>{icon}</b>{label}</span>{badge !== undefined && <em>{badge}</em>}</button>; }
-function Dashboard({ view, stats, items, status }: { view: string; stats: DashboardStats; items: StashItem[]; status: RuntimeStatus | null }) { return <><section className="hero-row"><p className="muted">Here’s what your screenshots surfaced while you were away.</p><div className="date-chip">◷ Last 7 days　⌄</div></section><section className="metric-grid"><Metric label="Captured" value={stats.total} delta="local screenshots" /><Metric label="Tasks found" value={stats.tasks} delta="from your stash" /><Metric label="Events" value={stats.events} delta="from your stash" /><Metric label="Receipts" value={stats.receipts} delta="from your stash" /></section><section className="content-grid"><div className="panel"><div className="panel-heading"><div><p className="eyebrow">RECENT ACTIVITY</p><h2>{view === "calendar" ? "Upcoming from screenshots" : "Your latest stash"}</h2></div><button className="text-button">View all →</button></div>{items.length ? items.map((item) => <StashCard key={item.title} item={item} />) : <p className="muted empty-state">No screenshots have been organized yet.</p>}</div><div className="panel digest"><p className="eyebrow">LOCAL STATUS</p><h2>A private workspace.</h2><p className="muted">Your screenshot data stays in the local ScreenStash application directory.</p><div className="progress"><span style={{ width: status?.service_running ? "100%" : "0%" }} /></div><div className="digest-row"><span>Processing health</span><strong>{status?.service_running ? "Active" : "Ready to start"}</strong></div><div className="digest-row"><span>Active AI engine</span><strong>{status?.model_ready ? "Gemma 3 (Neural)" : "Built-in Offline Engine"}</strong></div><button className="secondary-button" onClick={() => window.location.reload()}>Refresh status</button></div></section></>; }
+function Dashboard({ view, stats, items, status }: { view: string; stats: DashboardStats; items: StashItem[]; status: RuntimeStatus | null }) { return <><section className="hero-row"><p className="muted">Here’s what your screenshots surfaced while you were away.</p><div className="date-chip">◷ Last 7 days　⌄</div></section><section className="metric-grid"><Metric label="Captured" value={stats.total} delta="local screenshots" /><Metric label="Tasks found" value={stats.tasks} delta="from your stash" /><Metric label="Events" value={stats.events} delta="from your stash" /><Metric label="Receipts" value={stats.receipts} delta="from your stash" /></section><section className="content-grid"><div className="panel"><div className="panel-heading"><div><p className="eyebrow">RECENT ACTIVITY</p><h2>{view === "calendar" ? "Upcoming from screenshots" : "Your latest stash"}</h2></div><button className="text-button">View all →</button></div>{items.length ? items.map((item) => <StashCard key={item.title} item={item} />) : <p className="muted empty-state">No screenshots have been organized yet.</p>}</div><div className="panel digest"><p className="eyebrow">LOCAL STATUS</p><h2>A private workspace.</h2><p className="muted">Your screenshot data stays in the local ScreenStash application directory.</p><div className="progress"><span style={{ width: status?.service_running ? "100%" : "0%" }} /></div><div className="digest-row"><span>Processing health</span><strong>{status?.service_running ? "Active" : "Ready to start"}</strong></div><div className="digest-row"><span>Processed today</span><strong>{stats.processed_today}</strong></div><div className="digest-row"><span>Active AI engine</span><strong>{status?.model_ready ? "Gemma 3 (Neural)" : "Built-in Offline Engine"}</strong></div><button className="secondary-button" onClick={() => window.location.reload()}>Refresh status</button></div></section></>; }
 function Metric({ label, value, delta }: { label: string; value: number; delta: string }) { return <div className="metric"><span>{label}</span><strong>{value}</strong><small>{delta}</small></div>; }
 function StashCard({ item }: { item: StashItem }) { return <article className="stash-card"><div className={`card-icon ${item.accent}`}>{item.category === "Task" ? "✓" : item.category === "Event" ? "□" : "▤"}</div><div className="card-body"><div className="card-title"><h3>{item.title}</h3><span className={`tag ${item.accent}`}>{item.category}</span></div><p>{item.summary}</p><small>{item.time}</small></div><button className="more">•••</button></article>; }
 function Settings({ config, status, saving, cloudStatus, onCheckCloudConnection, onChange, onSetupAi }: { config: AppConfig; status: RuntimeStatus | null; saving: boolean; cloudStatus: "checking" | "connected" | "error" | "idle"; onCheckCloudConnection: () => void; onChange: (patch: Partial<AppConfig>) => void; onSetupAi: () => void }) {

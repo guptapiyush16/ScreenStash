@@ -11,5 +11,5 @@ export interface RuntimeStatus {
   service_running: boolean; python_available: boolean; ollama_available: boolean;
   model_ready: boolean; watched_folder: string; app_data_dir: string;
 }
-export interface DashboardStats { total: number; tasks: number; events: number; receipts: number; }
+export interface DashboardStats { total: number; tasks: number; events: number; receipts: number; processed_today: number; }
 export interface StashItem { title: string; category: Category; summary: string; time: string; accent: string; }
