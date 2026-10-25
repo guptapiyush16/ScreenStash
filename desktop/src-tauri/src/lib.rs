@@ -23,7 +23,19 @@ pub struct RuntimeStatus { service_running: bool, python_available: bool, ollama
 #[derive(Debug, Serialize)]
 pub struct DashboardStats { total: u32, tasks: u32, events: u32, receipts: u32, processed_today: u32 }
 #[derive(Debug, Serialize)]
-pub struct StashItem { title: String, category: String, summary: String, time: String, accent: String }
+pub struct StashItem {
+    pub title: String,
+    pub category: String,
+    pub summary: String,
+    pub time: String,
+    pub accent: String,
+    #[serde(default)]
+    pub dates: Vec<String>,
+    #[serde(default)]
+    pub tasks: Vec<String>,
+    #[serde(default)]
+    pub amount: Option<String>,
+}
 fn app_data_dir() -> PathBuf {
     if cfg!(target_os = "windows") {
         return env::var_os("LOCALAPPDATA").or_else(|| env::var_os("APPDATA"))
@@ -116,17 +128,26 @@ fn get_dashboard_stats() -> DashboardStats {
 #[tauri::command]
 fn get_recent_items() -> Vec<StashItem> {
     let Ok(conn) = Connection::open(database_path()) else { return Vec::new(); };
-    let Ok(mut statement) = conn.prepare("SELECT title, category, summary, created_at FROM screenshots ORDER BY created_at DESC LIMIT 8") else { return Vec::new(); };
-    let Ok(rows) = statement.query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?, row.get::<_, String>(3)?))) else { return Vec::new(); };
-    rows.filter_map(Result::ok).map(|(title, category, summary, time)| {
+    let Ok(mut statement) = conn.prepare("SELECT title, category, summary, created_at, dates_json, tasks_json, amount FROM screenshots ORDER BY created_at DESC LIMIT 100") else { return Vec::new(); };
+    let Ok(rows) = statement.query_map([], |row| {
+        let title: String = row.get(0)?;
+        let category: String = row.get(1)?;
+        let summary: String = row.get(2)?;
+        let time: String = row.get(3)?;
+        let dates_raw: Option<String> = row.get(4).ok();
+        let tasks_raw: Option<String> = row.get(5).ok();
+        let amount: Option<String> = row.get(6).ok();
+        let dates: Vec<String> = dates_raw.and_then(|r| serde_json::from_str(&r).ok()).unwrap_or_default();
+        let tasks: Vec<String> = tasks_raw.and_then(|r| serde_json::from_str(&r).ok()).unwrap_or_default();
         let accent = match category.as_str() {
             "Task" => "peach",
             "Event" => "purple",
             "Receipt" => "green",
             _ => "lime",
         }.to_string();
-        StashItem { title, category, summary, time, accent }
-    }).collect()
+        Ok(StashItem { title, category, summary, time, accent, dates, tasks, amount })
+    }) else { return Vec::new(); };
+    rows.filter_map(Result::ok).collect()
 }
 #[tauri::command]
 fn run_pipeline_command(app: tauri::AppHandle, command: String) -> Result<String, String> {

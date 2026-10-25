@@ -12,4 +12,15 @@ export interface RuntimeStatus {
   model_ready: boolean; watched_folder: string; app_data_dir: string;
 }
 export interface DashboardStats { total: number; tasks: number; events: number; receipts: number; processed_today: number; }
-export interface StashItem { title: string; category: Category; summary: string; time: string; accent: string; }
+export interface StashItem {
+  id?: number;
+  title: string;
+  category: Category;
+  summary: string;
+  time: string;
+  accent: string;
+  dates?: string[];
+  tasks?: string[];
+  amount?: string | null;
+}
+
