@@ -16,7 +16,9 @@ from collections import defaultdict, deque
 from datetime import datetime, timezone
 
 from fastapi import FastAPI, File, Header, HTTPException, Request, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from google import genai
+
 from google.genai import types
 from pydantic import BaseModel, Field
 from sqlalchemy import DateTime, Integer, String, UniqueConstraint, create_engine, select
@@ -74,7 +76,15 @@ class ExtractionResponse(BaseModel):
 engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 Base.metadata.create_all(engine)
 app = FastAPI(title="ScreenStash Cloud AI", docs_url=None, redoc_url=None)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 _request_times: dict[str, deque[float]] = defaultdict(deque)
+
 _rate_lock = threading.Lock()
 _extraction_slots = threading.BoundedSemaphore(MAX_CONCURRENT_EXTRACTIONS)
 

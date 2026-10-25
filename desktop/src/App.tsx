@@ -46,6 +46,39 @@ function App() {
     }
   }, [config.ai_provider]);
   useEffect(() => { let cancelled = false; Promise.all([getConfig(), getRuntimeStatus(), getDashboardStats(), getRecentItems()]).then(async ([loaded, runtime, loadedStats, loadedItems]) => { if (cancelled) return; if (loaded) { setConfig(loaded); setOnboarding(!loaded.onboarding_complete); } setStatus(runtime); if (loadedStats) setStats(loadedStats); setItems(loadedItems); if (loaded?.onboarding_complete && !runtime?.service_running) { try { await runPipelineCommand("start"); await new Promise((resolve) => window.setTimeout(resolve, 750)); if (!cancelled) { const recovered = await getRuntimeStatus(); setStatus(recovered); setNotice("Screenshot watcher restarted."); } } catch { if (!cancelled) setNotice("The screenshot watcher could not start. Check the selected folder and restart ScreenStash."); } } }).catch(() => setNotice("Running in preview mode — connect the Python sidecar to load live data.")); return () => { cancelled = true; }; }, []);
+  useEffect(() => {
+    let active = true;
+    const interval = setInterval(async () => {
+      try {
+        const [latestStats, latestItems, latestRuntime] = await Promise.all([
+          getDashboardStats(),
+          getRecentItems(),
+          getRuntimeStatus()
+        ]);
+        if (active) {
+          if (latestStats) setStats(latestStats);
+          if (latestItems) setItems(latestItems);
+          if (latestRuntime) setStatus(latestRuntime);
+        }
+      } catch {
+        // Silently skip if bridge is busy
+      }
+    }, 3000);
+    const onFocus = () => {
+      Promise.all([getDashboardStats(), getRecentItems(), getRuntimeStatus()]).then(([s, i, r]) => {
+        if (s) setStats(s);
+        if (i) setItems(i);
+        if (r) setStatus(r);
+      }).catch(() => undefined);
+    };
+    window.addEventListener("focus", onFocus);
+    return () => {
+      active = false;
+      clearInterval(interval);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, []);
+
   const visibleItems = useMemo(() => view === "tasks" ? items.filter((item) => item.category === "Task") : items, [view, items]);
   async function finishOnboarding() { const next = { ...config, onboarding_complete: true }; setConfig(next); setOnboarding(false); setSaving(true); try { await saveConfig(next); await runPipelineCommand("start"); setNotice("ScreenStash is ready and watching locally."); } catch { setNotice("Saved locally. The Python watcher will start when the sidecar is available."); } finally { setSaving(false); } }
   async function updateConfig(patch: Partial<AppConfig>) {
