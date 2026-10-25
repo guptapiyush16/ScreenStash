@@ -49,6 +49,16 @@ class MonthlyUsage(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class GeminiExtraction(BaseModel):
+    title: str = Field(description="Descriptive title of the screenshot")
+    category: str = Field(description="One of: Task, Event, Receipt, Reference, Other")
+    summary: str = Field(description="1-2 sentence summary of screenshot content")
+    dates: list[str] = Field(default_factory=list, description="Extracted dates, deadlines, or times")
+    tasks: list[str] = Field(default_factory=list, description="Actionable checklist items or tasks")
+    amount: str | None = Field(default=None, description="Monetary total with currency if a receipt or bill, else null")
+    tags: list[str] = Field(default_factory=list, description="2-4 relevant keyword tags")
+
+
 class ExtractionResponse(BaseModel):
     title: str
     category: str
@@ -58,6 +68,7 @@ class ExtractionResponse(BaseModel):
     amount: str | None = None
     tags: list[str] = []
     remaining: int
+
 
 
 engine = create_engine(DATABASE_URL, pool_pre_ping=True)
@@ -189,35 +200,54 @@ def extract(request: Request, image: UploadFile = File(...), x_installation_id: 
         if not _extraction_slots.acquire(blocking=False):
             raise HTTPException(status_code=429, detail="Cloud AI is busy; try again shortly")
         try:
-            model_name = GEMINI_MODEL or "gemini-2.0-flash"
-            response = client.models.generate_content(
-                model=model_name,
-                contents=[
-                    types.Part.from_bytes(data=image_bytes, mime_type=image.content_type),
-                    prompt,
-                ],
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    response_schema=SCHEMA,
-                ),
-            )
-            raw_text = (response.text or "{}").strip()
-            if raw_text.startswith("```json"):
-                raw_text = raw_text[7:]
-            if raw_text.startswith("```"):
-                raw_text = raw_text[3:]
-            if raw_text.endswith("```"):
-                raw_text = raw_text[:-3]
-            result = json.loads(raw_text.strip())
-            result["category"] = result.get("category", "Reference")
-            if result["category"] not in SCHEMA["properties"]["category"]["enum"]:
-                result["category"] = "Reference"
-            parsed = ExtractionResponse(**result, remaining=MONTHLY_LIMIT - used - 1)
+            candidate_models = [m for m in [GEMINI_MODEL, "gemini-2.0-flash", "gemini-1.5-flash"] if m]
+            last_err = None
+            response = None
+            for model_name in candidate_models:
+                try:
+                    response = client.models.generate_content(
+                        model=model_name,
+                        contents=[
+                            types.Part.from_bytes(data=image_bytes, mime_type=image.content_type),
+                            prompt,
+                        ],
+                        config=types.GenerateContentConfig(
+                            response_mime_type="application/json",
+                            response_schema=GeminiExtraction,
+                        ),
+                    )
+                    break
+                except Exception as m_err:
+                    last_err = m_err
+                    logger.warning("Attempt with model %s failed: %s", model_name, m_err)
+                    continue
+
+            if response is None:
+                raise last_err or RuntimeError("No candidate Gemini models succeeded")
+
+            if hasattr(response, "parsed") and response.parsed:
+                extracted = response.parsed.model_dump()
+            else:
+                raw_text = (response.text or "{}").strip()
+                if raw_text.startswith("```json"):
+                    raw_text = raw_text[7:]
+                if raw_text.startswith("```"):
+                    raw_text = raw_text[3:]
+                if raw_text.endswith("```"):
+                    raw_text = raw_text[:-3]
+                extracted = json.loads(raw_text.strip())
+
+            cat = str(extracted.get("category", "Reference")).capitalize()
+            if cat not in {"Task", "Event", "Receipt", "Reference", "Other"}:
+                cat = "Reference"
+            extracted["category"] = cat
+
+            parsed = ExtractionResponse(**extracted, remaining=MONTHLY_LIMIT - used - 1)
         except HTTPException:
             raise
         except Exception as exc:
             logger.error("Cloud extraction model call failed: %s", exc, exc_info=True)
-            raise HTTPException(status_code=502, detail="Cloud extraction failed") from exc
+            raise HTTPException(status_code=502, detail=f"Cloud extraction failed: {type(exc).__name__} - {str(exc)}") from exc
         finally:
             _extraction_slots.release()
 
