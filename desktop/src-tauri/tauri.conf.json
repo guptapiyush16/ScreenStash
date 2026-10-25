@@ -6,7 +6,7 @@
   "build": {"beforeDevCommand": "npm run dev", "devUrl": "http://localhost:1420", "beforeBuildCommand": "npm run build", "frontendDist": "../dist"},
   "app": {
     "windows": [{"label": "main", "title": "ScreenStash", "width": 1200, "height": 800, "minWidth": 900, "minHeight": 620, "resizable": true}],
-    "security": {"csp": "default-src 'self'; connect-src 'self' http://localhost:* http://127.0.0.1:*; img-src 'self' asset: data:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; script-src 'self'"},
+    "security": {"csp": "default-src 'self'; connect-src 'self' http://localhost:* http://127.0.0.1:* https://screenstash-cloudapi.onrender.com https:; img-src 'self' asset: data:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; script-src 'self'"},
     "trayIcon": {"iconPath": "icons/icon.png", "tooltip": "ScreenStash"}
   },
   "bundle": {
