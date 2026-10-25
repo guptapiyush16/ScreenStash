@@ -218,7 +218,7 @@ def call_gemini_cloud_ai(file_path: Path, config: Dict[str, Any]) -> Optional[Ex
                 timeout=60,
             )
         if response.status_code != 200:
-            logger.warning("Cloud extraction unavailable (HTTP %s); using offline fallback", response.status_code)
+            logger.warning("Cloud extraction unavailable (HTTP %s: %s); using offline fallback", response.status_code, response.text[:200])
             return None
         parsed = response.json()
         category = next((cat for cat in Category if cat.value.lower() == str(parsed.get("category", "")).lower()), Category.REFERENCE)
@@ -231,6 +231,7 @@ def call_gemini_cloud_ai(file_path: Path, config: Dict[str, Any]) -> Optional[Ex
     except (requests.RequestException, ValueError, TypeError) as exc:
         logger.warning("Cloud extraction failed; using offline fallback: %s", exc)
         return None
+
 
 
 def fallback_heuristic_ai(ocr_text: str, file_name: str) -> ExtractionResult:
@@ -412,12 +413,14 @@ def _execute_processing(file_path: Path) -> Optional[ScreenshotRecord]:
         db.update_status(record_id, ProcessStatus.PROCESSING)
         app_config = load_config()
 
+        is_cloud = app_config.get("ai_provider") == "gemini" and app_config.get("cloud_consent")
         show_saved_toast(
-            title="ScreenStash is working",
-            message="Processing locally. Your screenshot stays on this device.",
+            title="ScreenStash is analyzing",
+            message="Analyzing with ScreenStash Cloud AI..." if is_cloud else "Processing locally. Your screenshot stays on this device.",
             category="Info",
             duration_ms=3000
         )
+
 
         extraction: Optional[ExtractionResult] = None
         raw_ocr = ""
