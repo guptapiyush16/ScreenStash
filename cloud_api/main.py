@@ -193,7 +193,8 @@ def extract(request: Request, image: UploadFile = File(...), x_installation_id: 
             "- Write a 1-2 sentence summary of what this screenshot contains.\n"
             "- Extract actionable task items if present.\n"
             "- Extract any dates or deadlines if present.\n"
-            "- Extract total monetary amount with currency if this is a receipt or bill.\n"
+            "- Extract the full final total monetary amount with currency if this is a receipt, invoice, or bill (e.g. '$10.63').\n"
+
             "- Generate relevant tags.\n"
             f"Filename: {image.filename or 'screenshot'}"
         )
