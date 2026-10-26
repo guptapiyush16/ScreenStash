@@ -1,13 +1,33 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "ScreenStash",
-  "version": "0.1.12",
+  "version": "0.1.13",
   "identifier": "com.screenstash.desktop",
-  "build": {"beforeDevCommand": "npm run dev", "devUrl": "http://localhost:1420", "beforeBuildCommand": "npm run build", "frontendDist": "../dist"},
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
   "app": {
-    "windows": [{"label": "main", "title": "ScreenStash", "width": 1200, "height": 800, "minWidth": 900, "minHeight": 620, "resizable": true}],
-    "security": {"csp": "default-src 'self'; connect-src 'self' http://localhost:* http://127.0.0.1:* https://screenstash-cloudapi.onrender.com; img-src 'self' asset: data:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; script-src 'self'"},
-    "trayIcon": {"iconPath": "icons/icon.png", "tooltip": "ScreenStash"}
+    "windows": [
+      {
+        "label": "main",
+        "title": "ScreenStash",
+        "width": 1200,
+        "height": 800,
+        "minWidth": 900,
+        "minHeight": 620,
+        "resizable": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; connect-src 'self' http://localhost:* http://127.0.0.1:* https://screenstash-cloudapi.onrender.com; img-src 'self' asset: data:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; script-src 'self'"
+    },
+    "trayIcon": {
+      "iconPath": "icons/icon.png",
+      "tooltip": "ScreenStash"
+    }
   },
   "bundle": {
     "active": true,
@@ -20,6 +40,9 @@
     "category": "Productivity",
     "shortDescription": "Private screenshot intelligence",
     "longDescription": "Turn desktop screenshots into organized tasks, events, receipts, and references locally.",
-    "resources": ["screenstash-sidecar.exe", "screenstash-sidecar"]
+    "resources": [
+      "screenstash-sidecar.exe",
+      "screenstash-sidecar"
+    ]
   }
 }

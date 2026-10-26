@@ -140,31 +140,49 @@ function App() {
 
   useEffect(() => {
     let active = true;
+    let isPolling = false;
+    let pollTick = 0;
+
     const interval = setInterval(async () => {
+      if (isPolling) return; // Fix 3: Concurrency guard against stacked promises
+      isPolling = true;
+      pollTick++;
       try {
-        const [latestStats, latestItems, latestRuntime] = await Promise.all([
+        // Fast local SQLite queries (<1ms)
+        const [latestStats, latestItems] = await Promise.all([
           getDashboardStats(),
-          getRecentItems(),
-          getRuntimeStatus()
+          getRecentItems()
         ]);
         if (active) {
           if (latestStats) setStats(latestStats);
           if (latestItems) setItems(latestItems);
-          if (latestRuntime) setStatus(latestRuntime);
+        }
+
+        // Periodic runtime status check every 4th cycle (~20s) to keep CPU 0%
+        if (pollTick % 4 === 0) {
+          const latestRuntime = await getRuntimeStatus();
+          if (active && latestRuntime) setStatus(latestRuntime);
         }
       } catch {
         // Silently skip if bridge is busy
+      } finally {
+        isPolling = false;
       }
-    }, 3000);
+    }, 5000);
 
     const onFocus = () => {
+      if (isPolling) return;
+      isPolling = true;
       Promise.all([getDashboardStats(), getRecentItems(), getRuntimeStatus()])
         .then(([s, i, r]) => {
           if (s) setStats(s);
           if (i) setItems(i);
           if (r) setStatus(r);
         })
-        .catch(() => undefined);
+        .catch(() => undefined)
+        .finally(() => {
+          isPolling = false;
+        });
     };
 
     window.addEventListener("focus", onFocus);
@@ -366,6 +384,7 @@ function App() {
     const next = { ...config, ...patch };
     const screenshotFolderChanged =
       patch.screenshot_dir !== undefined && patch.screenshot_dir.trim() !== config.screenshot_dir;
+    const aiProviderChangedToOllama = patch.ai_provider === "ollama";
     setConfig(next);
     setSaving(true);
     try {
@@ -375,6 +394,18 @@ function App() {
         const runtime = await getRuntimeStatus();
         if (runtime) setStatus(runtime);
         setNotice(`Now watching ${next.screenshot_dir}. Only new screenshots will be organized.`);
+      } else if (aiProviderChangedToOllama) {
+        // Fix 1 requirement: check Ollama immediately when user selects Ollama in the dropdown
+        setNotice("Checking Ollama status & models on this PC…");
+        const runtime = await getRuntimeStatus();
+        if (runtime) setStatus(runtime);
+        if (runtime?.model_ready) {
+          setNotice(`Ollama connected: ${next.ollama_model} is ready.`);
+        } else if (runtime?.ollama_available) {
+          setNotice("Ollama detected. Click 'Download model' below to download weights.");
+        } else {
+          setNotice("Ollama not found on PATH. Install Ollama to run local models.");
+        }
       } else {
         setNotice("Preferences saved.");
       }

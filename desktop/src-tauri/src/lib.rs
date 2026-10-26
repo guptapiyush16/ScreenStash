@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use rusqlite::Connection;
-use std::{env, fs, path::{Path, PathBuf}, process::Command};
+use std::{env, fs, path::{Path, PathBuf}, process::Command, sync::Mutex, time::Instant};
 use tauri::Manager;
 use url::Url;
 
@@ -81,7 +81,68 @@ fn validate_config(config: &AppConfig) -> Result<(), String> {
     }
     Ok(())
 }
-#[tauri::command] fn save_config(config: AppConfig) -> Result<(), String> { validate_config(&config)?; let path = config_path(); fs::create_dir_all(path.parent().unwrap_or(Path::new("."))).map_err(|e| e.to_string())?; fs::write(path, serde_json::to_string_pretty(&config).map_err(|e| e.to_string())?).map_err(|e| e.to_string()) }
+static OLLAMA_CACHE: Mutex<Option<(Instant, bool, bool)>> = Mutex::new(None);
+static PYTHON_CACHE: Mutex<Option<(Instant, bool)>> = Mutex::new(None);
+
+fn is_pid_alive(pid: u32) -> bool {
+    #[cfg(target_os = "windows")]
+    {
+        type HANDLE = *mut std::ffi::c_void;
+        type BOOL = i32;
+        type DWORD = u32;
+        extern "system" {
+            fn OpenProcess(dwDesiredAccess: DWORD, bInheritHandle: BOOL, dwProcessId: DWORD) -> HANDLE;
+            fn CloseHandle(hObject: HANDLE) -> BOOL;
+            fn GetExitCodeProcess(hProcess: HANDLE, lpExitCode: *mut DWORD) -> BOOL;
+        }
+        const PROCESS_QUERY_LIMITED_INFORMATION: DWORD = 0x1000;
+        const STILL_ACTIVE: DWORD = 259;
+        unsafe {
+            let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+            if handle.is_null() {
+                return false;
+            }
+            let mut exit_code: DWORD = 0;
+            let ok = GetExitCodeProcess(handle, &mut exit_code);
+            CloseHandle(handle);
+            ok != 0 && exit_code == STILL_ACTIVE
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let res = Command::new("kill").args(["-0", &pid.to_string()]).output();
+        res.map(|o| o.status.success()).unwrap_or(false)
+    }
+}
+
+fn check_service_running() -> bool {
+    let pid_path = app_data_dir().join("screenstash_daemon.pid");
+    if !pid_path.exists() {
+        return false;
+    }
+    if let Ok(content) = fs::read_to_string(&pid_path) {
+        if let Ok(pid) = content.trim().parse::<u32>() {
+            if is_pid_alive(pid) {
+                return true;
+            }
+            let _ = fs::remove_file(&pid_path);
+        }
+    }
+    false
+}
+
+#[tauri::command]
+fn save_config(config: AppConfig) -> Result<(), String> {
+    validate_config(&config)?;
+    let path = config_path();
+    fs::create_dir_all(path.parent().unwrap_or(Path::new("."))).map_err(|e| e.to_string())?;
+    fs::write(path, serde_json::to_string_pretty(&config).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+    // Invalidate ollama cache so next get_runtime_status reflects immediately
+    if let Ok(mut cache) = OLLAMA_CACHE.lock() {
+        *cache = None;
+    }
+    Ok(())
+}
 fn pipeline_process(app: &tauri::AppHandle, command: &str) -> Command {
     let sidecar_name = if cfg!(windows) { "screenstash-sidecar.exe" } else { "screenstash-sidecar" };
     let bundled_sidecar = app.path().resource_dir()
@@ -99,26 +160,66 @@ fn pipeline_process(app: &tauri::AppHandle, command: &str) -> Command {
     }
 }
 #[tauri::command]
-fn get_runtime_status(app: tauri::AppHandle) -> RuntimeStatus {
+fn get_runtime_status(_app: tauri::AppHandle) -> RuntimeStatus {
     let config = read_config();
-    // Ask the Python sidecar to validate the PID and its command line. A PID
-    // file by itself can outlive a crashed watcher and must not be treated as
-    // proof that screenshots are being monitored.
-    let service_running = pipeline_process(&app, "status").output().map(|output| output.status.success()).unwrap_or(false);
-    let ollama_available = Command::new("ollama").arg("--version").output().is_ok();
-    let model_ready = if ollama_available {
-        if let Ok(output) = Command::new("ollama").arg("list").output() {
-            let text = String::from_utf8_lossy(&output.stdout);
-            text.contains(&config.ollama_model) || (config.ollama_model.contains("gemma3") && text.contains("gemma3"))
+    // Fix 2: Check service status directly via native PID (instant, 0 subprocesses)
+    let service_running = check_service_running();
+
+    // Fix 1: Check Ollama ONLY when "ollama" is selected in the AI provider dropdown
+    let is_ollama_selected = config.ai_provider == "ollama";
+    let (ollama_available, model_ready) = if is_ollama_selected {
+        let mut cache = OLLAMA_CACHE.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some((time, avail, ready)) = *cache {
+            if time.elapsed().as_secs() < 30 {
+                (avail, ready)
+            } else {
+                let avail = Command::new("ollama").arg("--version").output().is_ok();
+                let ready = if avail {
+                    if let Ok(output) = Command::new("ollama").arg("list").output() {
+                        let text = String::from_utf8_lossy(&output.stdout);
+                        text.contains(&config.ollama_model) || (config.ollama_model.contains("gemma3") && text.contains("gemma3"))
+                    } else { false }
+                } else { false };
+                *cache = Some((Instant::now(), avail, ready));
+                (avail, ready)
+            }
         } else {
-            false
+            let avail = Command::new("ollama").arg("--version").output().is_ok();
+            let ready = if avail {
+                if let Ok(output) = Command::new("ollama").arg("list").output() {
+                    let text = String::from_utf8_lossy(&output.stdout);
+                    text.contains(&config.ollama_model) || (config.ollama_model.contains("gemma3") && text.contains("gemma3"))
+                } else { false }
+            } else { false };
+            *cache = Some((Instant::now(), avail, ready));
+            (avail, ready)
         }
     } else {
-        false
+        // When Offline or Cloud is selected, zero Ollama commands are spawned!
+        (false, false)
     };
+
+    // Cached Python availability (valid for 120s)
+    let python_available = {
+        let mut py_cache = PYTHON_CACHE.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some((time, ok)) = *py_cache {
+            if time.elapsed().as_secs() < 120 {
+                ok
+            } else {
+                let ok = Command::new(python_executable()).arg("--version").output().is_ok();
+                *py_cache = Some((Instant::now(), ok));
+                ok
+            }
+        } else {
+            let ok = Command::new(python_executable()).arg("--version").output().is_ok();
+            *py_cache = Some((Instant::now(), ok));
+            ok
+        }
+    };
+
     RuntimeStatus {
         service_running,
-        python_available: Command::new(python_executable()).arg("--version").output().is_ok(),
+        python_available,
         ollama_available,
         model_ready,
         watched_folder: config.screenshot_dir,
