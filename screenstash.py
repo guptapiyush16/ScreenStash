@@ -52,11 +52,26 @@ def start_service():
         pythonw = Path(sys.executable).parent / "pythonw.exe"
         exe = str(pythonw) if pythonw.exists() else sys.executable
         target = str(Path(__file__).parent / "background.pyw")
-        flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
-        subprocess.Popen([exe, target], cwd=str(Path(__file__).parent), creationflags=flags, close_fds=True)
+        flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP | 0x08000000
+        subprocess.Popen(
+            [exe, target],
+            cwd=str(Path(__file__).parent),
+            creationflags=flags,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            close_fds=True
+        )
     else:
         target = str(Path(__file__).parent / "background_service.py")
-        subprocess.Popen([sys.executable, target], cwd=str(Path(__file__).parent), close_fds=True)
+        subprocess.Popen(
+            [sys.executable, target],
+            cwd=str(Path(__file__).parent),
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            close_fds=True
+        )
 
     print("[OK] Service started in background. New screenshots will trigger 'ScreenStash Saved' popups.")
 

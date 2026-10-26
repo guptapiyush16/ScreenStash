@@ -143,21 +143,38 @@ fn save_config(config: AppConfig) -> Result<(), String> {
     }
     Ok(())
 }
+fn run_hidden_command(program: &str, args: &[&str]) -> Result<std::process::Output, std::io::Error> {
+    let mut cmd = Command::new(program);
+    cmd.args(args);
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+    cmd.output()
+}
+
 fn pipeline_process(app: &tauri::AppHandle, command: &str) -> Command {
     let sidecar_name = if cfg!(windows) { "screenstash-sidecar.exe" } else { "screenstash-sidecar" };
     let bundled_sidecar = app.path().resource_dir()
         .ok()
         .map(|dir| dir.join(sidecar_name))
         .filter(|path| path.exists());
-    if let Some(sidecar) = bundled_sidecar {
-        let mut process = Command::new(sidecar);
-        process.arg(command);
-        process
+    let mut process = if let Some(sidecar) = bundled_sidecar {
+        let mut p = Command::new(sidecar);
+        p.arg(command);
+        p
     } else {
-        let mut process = Command::new(python_executable());
-        process.current_dir(project_root()).args(["screenstash.py", command]);
-        process
+        let mut p = Command::new(python_executable());
+        p.current_dir(project_root()).args(["screenstash.py", command]);
+        p
+    };
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        process.creation_flags(0x08000000); // CREATE_NO_WINDOW
     }
+    process
 }
 #[tauri::command]
 fn get_runtime_status(_app: tauri::AppHandle) -> RuntimeStatus {
@@ -173,9 +190,9 @@ fn get_runtime_status(_app: tauri::AppHandle) -> RuntimeStatus {
             if time.elapsed().as_secs() < 30 {
                 (avail, ready)
             } else {
-                let avail = Command::new("ollama").arg("--version").output().is_ok();
+                let avail = run_hidden_command("ollama", &["--version"]).is_ok();
                 let ready = if avail {
-                    if let Ok(output) = Command::new("ollama").arg("list").output() {
+                    if let Ok(output) = run_hidden_command("ollama", &["list"]) {
                         let text = String::from_utf8_lossy(&output.stdout);
                         text.contains(&config.ollama_model) || (config.ollama_model.contains("gemma3") && text.contains("gemma3"))
                     } else { false }
@@ -184,9 +201,9 @@ fn get_runtime_status(_app: tauri::AppHandle) -> RuntimeStatus {
                 (avail, ready)
             }
         } else {
-            let avail = Command::new("ollama").arg("--version").output().is_ok();
+            let avail = run_hidden_command("ollama", &["--version"]).is_ok();
             let ready = if avail {
-                if let Ok(output) = Command::new("ollama").arg("list").output() {
+                if let Ok(output) = run_hidden_command("ollama", &["list"]) {
                     let text = String::from_utf8_lossy(&output.stdout);
                     text.contains(&config.ollama_model) || (config.ollama_model.contains("gemma3") && text.contains("gemma3"))
                 } else { false }
@@ -206,12 +223,12 @@ fn get_runtime_status(_app: tauri::AppHandle) -> RuntimeStatus {
             if time.elapsed().as_secs() < 120 {
                 ok
             } else {
-                let ok = Command::new(python_executable()).arg("--version").output().is_ok();
+                let ok = run_hidden_command(&python_executable(), &["--version"]).is_ok();
                 *py_cache = Some((Instant::now(), ok));
                 ok
             }
         } else {
-            let ok = Command::new(python_executable()).arg("--version").output().is_ok();
+            let ok = run_hidden_command(&python_executable(), &["--version"]).is_ok();
             *py_cache = Some((Instant::now(), ok));
             ok
         }

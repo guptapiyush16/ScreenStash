@@ -1,6 +1,6 @@
 [package]
 name = "screenstash-desktop"
-version = "0.1.13"
+version = "0.1.14"
 description = "Local-first screenshot intelligence for ScreenStash"
 authors = ["ScreenStash contributors"]
 edition = "2021"
