@@ -66,4 +66,29 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
   });
+
+  // 4. Dynamically resolve latest release binaries from GitHub Releases API
+  fetch('https://api.github.com/repos/guptapiyush16/ScreenStash/releases/latest')
+    .then((res) => {
+      if (!res.ok) throw new Error('API offline');
+      return res.json();
+    })
+    .then((release) => {
+      if (!release || !release.assets) return;
+      const winExe = release.assets.find((a) => a.name.endsWith('-setup.exe') || a.name.endsWith('.exe'));
+      const macDmg = release.assets.find((a) => a.name.endsWith('.dmg'));
+      if (winExe) {
+        document.querySelectorAll('#hero-download-btn, .btn-lime').forEach((el) => {
+          el.href = winExe.browser_download_url;
+        });
+      }
+      if (macDmg) {
+        document.querySelectorAll('#hero-download-mac-btn, .btn-mac-dark').forEach((el) => {
+          el.href = macDmg.browser_download_url;
+        });
+      }
+    })
+    .catch(() => {
+      // Graceful fallback to static v0.1.12 download links
+    });
 });
