@@ -327,4 +327,76 @@ fn run_pipeline_command(app: tauri::AppHandle, command: String) -> Result<String
         Err(String::from_utf8_lossy(&output.stderr).to_string())
     }
 }
-pub fn run() { tauri::Builder::default().invoke_handler(tauri::generate_handler![get_config, save_config, get_runtime_status, get_dashboard_stats, get_recent_items, run_pipeline_command, open_file_in_folder, delete_screenshot_item]).setup(|app| { let _ = app.handle(); Ok(()) }).run(tauri::generate_context!()).expect("error while running ScreenStash"); }
+
+fn base64_encode(data: &[u8]) -> String {
+    const CHARSET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut result = String::with_capacity((data.len() + 2) / 3 * 4);
+    for chunk in data.chunks(3) {
+        let b0 = chunk[0];
+        let b1 = if chunk.len() > 1 { chunk[1] } else { 0 };
+        let b2 = if chunk.len() > 2 { chunk[2] } else { 0 };
+        result.push(CHARSET[(b0 >> 2) as usize] as char);
+        result.push(CHARSET[(((b0 & 0x03) << 4) | (b1 >> 4)) as usize] as char);
+        if chunk.len() > 1 {
+            result.push(CHARSET[(((b1 & 0x0f) << 2) | (b2 >> 6)) as usize] as char);
+        } else {
+            result.push('=');
+        }
+        if chunk.len() > 2 {
+            result.push(CHARSET[(b2 & 0x3f) as usize] as char);
+        } else {
+            result.push('=');
+        }
+    }
+    result
+}
+
+#[tauri::command]
+fn read_screenshot_image(path: String) -> Result<String, String> {
+    if path.trim().is_empty() {
+        return Err("Path is empty".into());
+    }
+    let p = PathBuf::from(&path);
+    if !p.exists() {
+        return Err(format!("Screenshot file does not exist: {}", path));
+    }
+
+    let ext = p.extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+
+    let mime = match ext.as_str() {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "webp" => "image/webp",
+        "gif" => "image/gif",
+        "bmp" => "image/bmp",
+        _ => "image/png",
+    };
+
+    let bytes = fs::read(&p).map_err(|e| format!("Failed to read screenshot file: {}", e))?;
+    let b64 = base64_encode(&bytes);
+    Ok(format!("data:{};base64,{}", mime, b64))
+}
+
+pub fn run() {
+    tauri::Builder::default()
+        .invoke_handler(tauri::generate_handler![
+            get_config,
+            save_config,
+            get_runtime_status,
+            get_dashboard_stats,
+            get_recent_items,
+            run_pipeline_command,
+            open_file_in_folder,
+            delete_screenshot_item,
+            read_screenshot_image
+        ])
+        .setup(|app| {
+            let _ = app.handle();
+            Ok(())
+        })
+        .run(tauri::generate_context!())
+        .expect("error while running ScreenStash");
+}

@@ -56,3 +56,14 @@ export function getScreenshotAssetUrl(filePath?: string | null): string | null {
     return null;
   }
 }
+
+export async function loadScreenshotDataUrl(filePath?: string | null): Promise<string | null> {
+  if (!filePath || !isTauri) return null;
+  try {
+    return await invoke<string>("read_screenshot_image", { path: filePath });
+  } catch (err) {
+    console.warn("Failed to load screenshot data URL:", err);
+    return null;
+  }
+}
+

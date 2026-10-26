@@ -1,6 +1,40 @@
 import { useMemo, useState } from "react";
 import type { Category, StashItem } from "./types";
-import { getScreenshotAssetUrl } from "./api";
+import { getScreenshotAssetUrl, loadScreenshotDataUrl } from "./api";
+
+function CalThumbnail({ item, onPreview }: { item: StashItem; onPreview?: (item: StashItem) => void }) {
+  const [dataUrl, setDataUrl] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+  const assetUrl = getScreenshotAssetUrl(item.file_path);
+  const src = dataUrl || assetUrl;
+
+  if (failed || !src) return null;
+
+  return (
+    <div
+      className="cal-mini-thumb"
+      onClick={() => onPreview?.(item)}
+      title="Click to view full screenshot"
+      style={{ width: "36px", height: "36px", borderRadius: "6px", overflow: "hidden", cursor: "pointer", border: "1px solid #dedcd4", background: "#f5f4ee", flexShrink: 0 }}
+    >
+      <img
+        src={src}
+        alt={item.title}
+        style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+        onError={() => {
+          if (!dataUrl && item.file_path) {
+            loadScreenshotDataUrl(item.file_path).then((res) => {
+              if (res) setDataUrl(res);
+              else setFailed(true);
+            });
+          } else {
+            setFailed(true);
+          }
+        }}
+      />
+    </div>
+  );
+}
 
 const DAYS_OF_WEEK = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const MONTH_NAMES = [
@@ -399,21 +433,7 @@ export function MonthlyCalendar({ items, onPreview }: { items: StashItem[]; onPr
                     <article key={itemKey} className="cal-agenda-card">
                       <div className="cal-card-top">
                         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                          {item.file_path && (
-                            <div
-                              className="cal-mini-thumb"
-                              onClick={() => onPreview?.(item)}
-                              title="Click to view full screenshot"
-                              style={{ width: "36px", height: "36px", borderRadius: "6px", overflow: "hidden", cursor: "pointer", border: "1px solid #dedcd4", background: "#f5f4ee", flexShrink: 0 }}
-                            >
-                              <img
-                                src={getScreenshotAssetUrl(item.file_path) || ""}
-                                alt={item.title}
-                                style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
-                                onError={(e) => { (e.target as HTMLElement).style.display = "none"; }}
-                              />
-                            </div>
-                          )}
+                          {item.file_path && <CalThumbnail item={item} onPreview={onPreview} />}
                           <span className={`tag ${item.accent}`}>
                             {item.category === "Event" ? "□ Event" : item.category === "Task" ? "✓ Task" : item.category === "Receipt" ? "▤ Receipt" : "✦ Reference"}
                           </span>

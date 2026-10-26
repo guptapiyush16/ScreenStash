@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import {
   deleteScreenshot,
   getConfig,
@@ -6,6 +6,7 @@ import {
   getRecentItems,
   getRuntimeStatus,
   getScreenshotAssetUrl,
+  loadScreenshotDataUrl,
   openFileInFolder,
   runPipelineCommand,
   saveConfig
@@ -975,11 +976,24 @@ function StashCard({
   onSearchSimilar: (q: string) => void;
   onNotice: (msg: string) => void;
 }) {
+  const [dataUrl, setDataUrl] = useState<string | null>(null);
   const [imgError, setImgError] = useState(false);
   const [hovered, setHovered] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
 
   const assetUrl = useMemo(() => getScreenshotAssetUrl(item.file_path), [item.file_path]);
+  const displaySrc = dataUrl || assetUrl;
+
+  const handleImgError = useCallback(() => {
+    if (!dataUrl && item.file_path) {
+      loadScreenshotDataUrl(item.file_path).then((res) => {
+        if (res) setDataUrl(res);
+        else setImgError(true);
+      });
+    } else {
+      setImgError(true);
+    }
+  }, [dataUrl, item.file_path]);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -998,12 +1012,12 @@ function StashCard({
         onClick={() => onPreview(item)}
         title="Click to expand screenshot"
       >
-        {assetUrl && !imgError ? (
+        {displaySrc && !imgError ? (
           <img
-            src={assetUrl}
+            src={displaySrc}
             alt={item.title}
             className="stash-thumb-img"
-            onError={() => setImgError(true)}
+            onError={handleImgError}
           />
         ) : (
           <div className={`card-icon-placeholder ${item.accent}`}>
@@ -1012,10 +1026,10 @@ function StashCard({
         )}
 
         {/* Floating Hover Popover */}
-        {hovered && assetUrl && !imgError && (
+        {hovered && displaySrc && !imgError && (
           <div className="stash-hover-popover" onClick={(e) => e.stopPropagation()}>
             <div className="hover-popover-preview">
-              <img src={assetUrl} alt={item.title} className="hover-popover-img" />
+              <img src={displaySrc} alt={item.title} className="hover-popover-img" />
             </div>
             <div className="hover-popover-info">
               <strong>{item.file_name || item.title}</strong>
@@ -1157,7 +1171,34 @@ function LightboxModal({
   onOpenFolder: (path: string) => void;
   onNotice: (msg: string) => void;
 }) {
+  const [dataUrl, setDataUrl] = useState<string | null>(null);
+  const [imgFailed, setImgFailed] = useState(false);
   const assetUrl = useMemo(() => getScreenshotAssetUrl(item.file_path), [item.file_path]);
+
+  useEffect(() => {
+    let active = true;
+    if (item.file_path) {
+      loadScreenshotDataUrl(item.file_path).then((res) => {
+        if (active && res) {
+          setDataUrl(res);
+        }
+      });
+    }
+    return () => { active = false; };
+  }, [item.file_path]);
+
+  const displaySrc = dataUrl || assetUrl;
+
+  const handleImgError = useCallback(() => {
+    if (!dataUrl && item.file_path) {
+      loadScreenshotDataUrl(item.file_path).then((res) => {
+        if (res) setDataUrl(res);
+        else setImgFailed(true);
+      });
+    } else {
+      setImgFailed(true);
+    }
+  }, [dataUrl, item.file_path]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -1209,12 +1250,40 @@ function LightboxModal({
         </div>
 
         <div className="lightbox-body">
-          {assetUrl ? (
-            <img src={assetUrl} alt={item.title} className="lightbox-image" />
+          {displaySrc && !imgFailed ? (
+            <img
+              src={displaySrc}
+              alt={item.title}
+              className="lightbox-image"
+              onError={handleImgError}
+            />
           ) : (
-            <div className="lightbox-fallback">
-              <p>Image preview unavailable for this item.</p>
-              {item.file_path && <small style={{ color: "#aaa" }}>{item.file_path}</small>}
+            <div className="lightbox-fallback" style={{ textAlign: "center", padding: "40px 20px" }}>
+              <div style={{ fontSize: "36px", marginBottom: "12px", opacity: 0.7 }}>🖼️</div>
+              <p style={{ fontWeight: 600, fontSize: "15px", marginBottom: "6px", color: "#ddd" }}>Screenshot Preview Unavailable</p>
+              <p style={{ color: "#888", fontSize: "12px", maxWidth: "420px", margin: "0 auto 16px" }}>
+                The original screenshot file could not be displayed or was moved.
+              </p>
+              {item.file_path && (
+                <div style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", padding: "6px 12px", borderRadius: "6px", display: "inline-block", maxWidth: "90%", wordBreak: "break-all", fontSize: "11px", color: "#aaa", marginBottom: "16px" }}>
+                  {item.file_path}
+                </div>
+              )}
+              {item.file_path && (
+                <div>
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => {
+                      onOpenFolder(item.file_path!);
+                      onNotice(`Opened in Explorer: ${item.file_name || item.title}`);
+                    }}
+                    style={{ margin: "0 auto" }}
+                  >
+                    Locate in File Explorer
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>
